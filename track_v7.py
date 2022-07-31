@@ -32,7 +32,6 @@ ROOT = FILE.parents[0]  # strongsort root directory
 WEIGHTS = ROOT / 'weights'
 
 
-
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 if str(ROOT / 'yolov7') not in sys.path:
@@ -46,7 +45,7 @@ from yolov7.models.experimental import attempt_load
 from yolov7.utils.datasets import LoadStreams, LoadImages
 from yolov7.utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
     scale_coords, xyxy2xywh, strip_optimizer, set_logging, increment_path
-from yolov7.utils.plots import plot_one_box,  save_one_box
+from yolov7.utils.plots import plot_one_box
 from yolov7.utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 
 from strong_sort.utils.parser import get_config
@@ -67,7 +66,6 @@ def detect(save_img=False, line_thickness=1):
     config_strongsort=ROOT / 'strong_sort/configs/strong_sort.yaml'
     save_txt=opt.save_txt  # save results to *.txt
     save_conf=opt.save_conf  # save confidences in --save-txt labels
-    save_crop = opt.save_crop
     hide_labels=opt.hide_labels  # hide labels
     hide_conf=opt.hide_conf  # hide confidences
     hide_class=opt.hide_class  # hide IDs
@@ -255,10 +253,6 @@ def detect(save_img=False, line_thickness=1):
                                 (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
                             plot_one_box(bboxes, im0, label=label, color=colors[int(cls)], line_thickness=line_thickness)
 
-                        if save_crop:
-                            txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
-                            save_one_box(bboxes, imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
-
 
                 ### Print time (inference + NMS)
                 print(f'{s}Done. YOLO:({t3 - t2:.3f}s), StrongSORT:({t5 - t4:.3f}s)')
@@ -357,7 +351,6 @@ if __name__ == '__main__':
     parser.add_argument('--show-vid', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-img', action='store_true', help='save results to *.jpg')
-    parser.add_argument('--save-crop', action='store_true', help='save objects crops to *.jpg')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--nosave', action='store_true',default=True, help='do not save images/videos')
     parser.add_argument('--save-vid', action='store_true', help='save video tracking results')
