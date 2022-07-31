@@ -1,4 +1,0 @@
-{'MOT16-03': {'left_side': {'person': 16, 'handbag': 1, 'backpack': 1, 'suitcase': 1}}}
-{'MOT16-03': {'right_side': {'person': 24, 'bicycle': 6, 'car': 1, 'motorcycle': 1, 'potted plant': 1, 'handbag': 1}}}
-{'MOT16-03': {'left_side': {'person': 16, 'handbag': 1, 'backpack': 1, 'suitcase': 1}}}
-{'MOT16-03': {'right_side': {'person': 24, 'bicycle': 6, 'car': 1, 'motorcycle': 1, 'potted plant': 1, 'handbag': 1}}}
