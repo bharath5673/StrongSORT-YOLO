@@ -60,7 +60,7 @@ you can select a Yolov5 family model for automatic download
 ```bash
 
 
-$ python track_v5.py --source 0 --yolo-weights yolov5n.pt --img 640
+$ python track_v5.py --source 0 --yolo-weights weighst/yolov5n.pt --img 640
                                             yolov5s.pt
                                             yolov5m.pt
                                             yolov5l.pt 
@@ -76,8 +76,8 @@ you can select a Yolov5 family model for automatic download
 ```bash
 
 
-$ python track_v7.py --source 0 --yolo-weights yolov7.pt --img 640
-                                            yolov7-tiny.pt
+$ python track_v7.py --source 0 --yolo-weights weighst/yolov7-tiny.pt --img 640
+                                            yolov7.pt
                                             yolov7x.pt 
                                             yolov7-w6.pt 
                                             yolov7-e6.pt 
@@ -108,13 +108,13 @@ By default the tracker tracks all MS COCO classes.
 If you only want to track persons I recommend you to get [these weights](https://drive.google.com/file/d/1gglIwqxaH2iTvy6lZlXuAcMpd_U0GCUb/view?usp=sharing) for increased performance
 
 ```bash
-python track_v*.py --source 0 --yolo-weights *weights.pt --classes 0  # tracks persons, only
+python track_v*.py --source 0 --yolo-weights weights/v*.pt --classes 0  # tracks persons, only
 ```
 
 If you want to track a subset of the MS COCO classes, add their corresponding index after the classes flag
 
 ```bash
-python track_v*.py --source 0 --yolo-weights  *weights.pt --classes 16 17  # tracks cats and dogs, only
+python track_v*.py --source 0 --yolo-weights  weights/v*.pt --classes 16 17  # tracks cats and dogs, only
 ```
 
 ### Counter
@@ -125,7 +125,7 @@ python track_v*.py --source 0 --yolo-weights  *weights.pt --classes 16 17  # tra
 
 ```bash
 
-$ python track_v*.py --source test.mp4 -yolo-weights weights/*weights.pt --save-txt --count --show-vid
+$ python track_v*.py --source test.mp4 -yolo-weights weights/v*.pt --save-txt --count --show-vid
 
 ```
 
