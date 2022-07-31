@@ -32,6 +32,7 @@ ROOT = FILE.parents[0]  # strongsort root directory
 WEIGHTS = ROOT / 'weights'
 
 
+
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 if str(ROOT / 'yolov7') not in sys.path:
