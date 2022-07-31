@@ -46,6 +46,7 @@ from strong_sort.strong_sort import StrongSORT
 # remove duplicated stream handler to avoid duplicated logging
 logging.getLogger().removeHandler(logging.getLogger().handlers[0])
 
+
 @torch.no_grad()
 def run(
         source='0',
