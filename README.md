@@ -125,7 +125,7 @@ python track_v*.py --source 0 --yolo-weights  *weights.pt --classes 16 17  # tra
 
 ```bash
 
-$ python track_v*.py --source test.mp4 -yolo-weights *weights.pt --save-txt --count --show-vid
+$ python track_v*.py --source test.mp4 -yolo-weights weights/*weights.pt --save-txt --count --show-vid
 
 ```
 
