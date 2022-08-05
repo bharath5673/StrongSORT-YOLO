@@ -262,7 +262,6 @@ def detect(save_img=False, line_thickness=1):
                 print('No detections')
 
 
-
             if count:
                 itemDict={}
                 ## NOTE: this works only if save-txt is true
