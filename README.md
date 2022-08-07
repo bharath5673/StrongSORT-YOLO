@@ -76,7 +76,7 @@ you can select a Yolov5 family model for automatic download
 ```bash
 
 
-$ python track_v7.py --source 0 --yolo-weights weighst/yolov7-tiny.pt --img 640
+$ python track_v7.py --source 0 --yolo-weights weights/yolov7-tiny.pt --img 640
                                             yolov7.pt
                                             yolov7x.pt 
                                             yolov7-w6.pt 
