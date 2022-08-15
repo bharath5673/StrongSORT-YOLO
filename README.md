@@ -119,7 +119,7 @@ python track_v*.py --source 0 --yolo-weights  weights/v*.pt --classes 16 17  # t
 
 ### Counter
 
-![counter](testing.jpg)
+![counter](demo.gif)
 
 #### get realtime counts of every tracking objects without any rois or trajectories or any line interctions
 
