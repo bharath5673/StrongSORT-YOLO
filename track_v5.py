@@ -156,10 +156,6 @@ def run(
         im = im.half() if half else im.float()  # uint8 to fp16/32
         im /= 255.0  # 0 - 255 to 0.0 - 1.0
 
-        frame_height = im0s.shape[0]
-        frame_width = im0s.shape[1]
-        middle_line = frame_width//2
-
         if len(im.shape) == 3:
             im = im[None]  # expand for batch dim
         t2 = time_sync()
@@ -234,12 +230,6 @@ def run(
 
                         bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes 
 
-                        vehicle_side = -2
-                        if bbox_right < middle_line:
-                            vehicle_side = 0  ## LEFT
-                        if bbox_left > middle_line:
-                            vehicle_side = 1  ## RIGHT
-
                         if save_txt:
                             # to MOT format
                             bbox_left = output[0]
@@ -248,7 +238,7 @@ def run(
                             bbox_h = output[3] - output[1]
                             # Write MOT compliant results to file
                             with open(txt_path+'.txt', 'a') as f:
-                                f.write(('%g ' * 12 + '\n') % (frame_idx + 1, cls, id, int(vehicle_side), bbox_left,  # MOT format
+                                f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
                                                                bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))
 
                         if save_vid or save_crop or show_vid:  # Add bbox to image
@@ -374,7 +364,7 @@ def parse_opt():
     parser.add_argument('--project', default=ROOT / 'runs/track', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=2, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--hide-class', default=False, action='store_true', help='hide IDs')

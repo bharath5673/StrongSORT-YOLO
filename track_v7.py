@@ -161,10 +161,6 @@ def detect(save_img=False, line_thickness=1):
         t2 = time_synchronized()
         dt[0] += t2 - t1
 
-        frame_height = im0s.shape[0]
-        frame_width = im0s.shape[1]
-        middle_line = frame_width//2
-
         # Inference
         pred = model(img, augment=opt.augment)[0]
         t3 = time_synchronized()
@@ -229,12 +225,6 @@ def detect(save_img=False, line_thickness=1):
 
                         bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes 
 
-                        vehicle_side = -2
-                        if bbox_right < middle_line:
-                            vehicle_side = 0  ## LEFT
-                        if bbox_left > middle_line:
-                            vehicle_side = 1  ## RIGHT
-
                         if save_txt:
                             # to MOT format
                             bbox_left = output[0]
@@ -243,7 +233,7 @@ def detect(save_img=False, line_thickness=1):
                             bbox_h = output[3] - output[1]
                             # Write MOT compliant results to file
                             with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * 12 + '\n') % (frame_idx + 1, cls, id, int(vehicle_side), bbox_left,  # MOT format
+                                f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
                                                                bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))
 
                         if save_vid or save_crop or show_vid :  # Add bbox to image
@@ -361,7 +351,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp-name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--trace', action='store_true', help='trace model')
-    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--hide-class', default=False, action='store_true', help='hide IDs')
