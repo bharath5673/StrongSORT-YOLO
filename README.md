@@ -36,7 +36,7 @@ This repository contains a highly configurable two-stage-tracker that adjusts to
 
 1. Clone the repository recursively:
 
-`git clone --recurse-submodules https://github.com/bharath5673/StrongSORT-YOLO.git t`
+`git clone --recurse-submodules https://github.com/bharath5673/StrongSORT-YOLO.git `
 
 If you already cloned and forgot to use `--recurse-submodules` you can run `git submodule update --init`
 
