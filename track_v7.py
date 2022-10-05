@@ -1,3 +1,4 @@
+
 import os
 import sys
 import argparse
@@ -73,6 +74,7 @@ def detect(save_img=False, line_thickness=1):
     save_vid=opt.save_vid
     save_img=opt.save_img
     line_thickness=opt.line_thickness
+    draw=opt.draw 
 
 
     # Directories
@@ -136,6 +138,7 @@ def detect(save_img=False, line_thickness=1):
         )
     outputs = [None] * nr_sources
 
+    trajectory = {}
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
@@ -223,7 +226,21 @@ def detect(save_img=False, line_thickness=1):
                         id = output[4]
                         cls = output[5]
 
-                        bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes 
+                        if draw:
+                            # object trajectory
+                            center = ((int(bboxes[0]) + int(bboxes[2])) // 2,(int(bboxes[1]) + int(bboxes[3])) // 2)
+                            if id not in trajectory:
+                                trajectory[id] = []
+                            trajectory[id].append(center)
+                            for i1 in range(1,len(trajectory[id])):
+                                if trajectory[id][i1-1] is None or trajectory[id][i1] is None:
+                                    continue
+                                # thickness = int(np.sqrt(1000/float(i1+10))*0.3)
+                                thickness = 2
+                                try:
+                                  cv2.line(im0, trajectory[id][i1 - 1], trajectory[id][i1], (0, 0, 255), thickness)
+                                except:
+                                  pass
 
                         if save_txt:
                             # to MOT format
@@ -356,6 +373,7 @@ if __name__ == '__main__':
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--hide-class', default=False, action='store_true', help='hide IDs')
     parser.add_argument('--count', action='store_true', help='display all MOT counts results on screen')
+    parser.add_argument('--draw', action='store_true', help='display object trajectory lines')
     opt = parser.parse_args()
     print(opt)
     #check_requirements(exclude=('pycocotools', 'thop'))
