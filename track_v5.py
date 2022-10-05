@@ -1,3 +1,4 @@
+
 import argparse
 
 import os
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 from collections import Counter
+from collections import deque
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -63,7 +65,7 @@ def run(
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        show_vid=True,  # show results
+        show_vid=False,  # show results
         save_txt=False,  # save results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
         save_crop=False,  # save cropped prediction boxes
@@ -77,13 +79,14 @@ def run(
         project=ROOT / 'runs/track',  # save results to project/name
         name='exp',  # save results to project/name
         exist_ok=False,  # existing project/name ok, do not increment
-        line_thickness=3,  # bounding box thickness (pixels)
+        line_thickness=2,  # bounding box thickness (pixels)
         hide_labels=False,  # hide labels
         hide_conf=False,  # hide confidences
         hide_class=False,  # hide IDs
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         count=False,  # get counts of every obhects
+        draw=False,  # draw object trajectory lines
 
 ):
 
@@ -111,6 +114,8 @@ def run(
     model = DetectMultiBackend(yolo_weights, device=device, dnn=dnn, data=None, fp16=half)
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_img_size(imgsz, s=stride)  # check image size
+    trajectory = {}
+
 
     # Dataloader
     if webcam:
@@ -227,8 +232,24 @@ def run(
                         bboxes = output[0:4]
                         id = output[4]
                         cls = output[5]
+                        bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes
+                        
+                        if draw:
+                            # object trajectory
+                            center = ((int(bboxes[0]) + int(bboxes[2])) // 2,(int(bboxes[1]) + int(bboxes[3])) // 2)
+                            if id not in trajectory:
+                                trajectory[id] = []
+                            trajectory[id].append(center)
+                            for i1 in range(1,len(trajectory[id])):
+                                if trajectory[id][i1-1] is None or trajectory[id][i1] is None:
+                                    continue
+                                # thickness = int(np.sqrt(1000/float(i1+10))*0.3)
+                                thickness = 2
+                                try:
+                                  cv2.line(im0, trajectory[id][i1 - 1], trajectory[id][i1], (0, 0, 255), thickness)
+                                except:
+                                  pass
 
-                        bbox_left, bbox_top, bbox_right, bbox_bottom = bboxes 
 
                         if save_txt:
                             # to MOT format
@@ -247,6 +268,8 @@ def run(
                             label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
                                 (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
                             annotator.box_label(bboxes, label, color=colors(c, True))
+
+
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
                                 save_one_box(bboxes, imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
@@ -355,6 +378,7 @@ def parse_opt():
     parser.add_argument('--save-vid', action='store_true', help='save video tracking results')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     parser.add_argument('--count', action='store_true', help='display all MOT counts results on screen')
+    parser.add_argument('--draw', action='store_true', help='display object trajectory lines')
     # class 0 is person, 1 is bycicle, 2 is car... 79 is oven
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
