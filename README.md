@@ -130,7 +130,7 @@ $ python track_v*.py --source test.mp4 -yolo-weights weights/v*.pt --save-txt --
 ```
 
 
-### Draw Object Trajectory 
+### Draw Object Trajectory <img src="https://media0.giphy.com/media/J19OSJKmqCyP7Mfjt1/giphy.gif" width="80" height="30" />
 
 ```bash
 
