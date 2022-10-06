@@ -94,7 +94,7 @@ The above applies to StrongSORT models as well. Choose a ReID model based on you
 ```bash
 
 
-$ python track.py --source 0 --strong-sort-weights osnet_x0_25_market1501.pt
+$ python track_v*.py --source 0 --strong-sort-weights osnet_x0_25_market1501.pt
                                                    osnet_x0_5_market1501.pt
                                                    osnet_x0_75_msmt17.pt
                                                    osnet_x1_0_msmt17.pt
