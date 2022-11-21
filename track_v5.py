@@ -330,7 +330,8 @@ def run(
 
             if show_vid:
                 cv2.imshow(str(p), im0)
-                cv2.waitKey(1)  # 1 millisecond
+                if cv2.waitKey(1) == ord('q'):  # q to quit
+                    break
 
             # Save results (image with detections)
             if save_vid:
