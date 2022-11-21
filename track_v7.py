@@ -317,7 +317,8 @@ def detect(save_img=False, line_thickness=1):
                 inf = (f'{s}Done. ({t2 - t1:.3f}s)')
                 # cv2.putText(im0, str(inf), (30,160), cv2.FONT_HERSHEY_SIMPLEX,0.7,(40,40,40),2)
                 cv2.imshow(str(p), im0)
-                cv2.waitKey(1)  # 1 millisecond
+                if cv2.waitKey(1) == ord('q'):  # q to quit
+                    break
 
             # Save results (image with detections)
             if save_img:
