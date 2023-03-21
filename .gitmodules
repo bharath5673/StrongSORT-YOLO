@@ -3,7 +3,7 @@
 	url = https://github.com/ultralytics/yolov5.git
 [submodule "yolov7"]
 	path = yolov7
-	url = https://github.com/WongKinYiu/yolov7.git
+	url = https://github.com/nelioasousa/yolov7.git
 [submodule "strong_sort/deep/reid"]
 	path = strong_sort/deep/reid
 	url = https://github.com/KaiyangZhou/deep-person-reid
