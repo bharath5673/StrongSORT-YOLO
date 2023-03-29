@@ -45,8 +45,7 @@ class StrongSORT(object):
         )
 
         self.max_dist = max_dist
-        metric = NearestNeighborDistanceMetric(
-            "cosine", self.max_dist, nn_budget)
+        metric = NearestNeighborDistanceMetric("cosine", self.max_dist, nn_budget)
         self.tracker = Tracker(
             metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
 
@@ -59,8 +58,8 @@ class StrongSORT(object):
             confidences)]
 
         # run on non-maximum supression
-        boxes = np.array([d.tlwh for d in detections])
-        scores = np.array([d.confidence for d in detections])
+        # boxes = np.array([d.tlwh for d in detections]) ### ????
+        # scores = np.array([d.confidence for d in detections]) ### ????
 
         # update tracker
         self.tracker.predict()
@@ -78,10 +77,11 @@ class StrongSORT(object):
             track_id = track.track_id
             class_id = track.class_id
             conf = track.conf
-            outputs.append(np.array([x1, y1, x2, y2, track_id, class_id, conf]))
-        if len(outputs) > 0:
-            outputs = np.stack(outputs, axis=0)
-        return outputs
+            outputs.append(np.array([x1, y1, x2, y2, track_id, class_id, conf], dtype='object'))
+        try:
+            return np.stack(outputs, axis=0)
+        except ValueError:
+            return np.zeros((0, 7), dtype='object')
 
     """
     TODO:

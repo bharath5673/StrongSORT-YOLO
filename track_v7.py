@@ -1,8 +1,8 @@
-
 import os
 import sys
 import argparse
 import os
+
 # limit the number of cpus used by high performance libraries
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -12,6 +12,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import time
 from pathlib import Path
+from collections import defaultdict
 
 import cv2
 import torch
@@ -53,29 +54,25 @@ from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
 
 
-
-def detect(save_img=False, line_thickness=1):
+def detect(opt):
     source, weights, show_vid, save_txt, imgsz, trace = opt.source, opt.yolo_weights, opt.show_vid, opt.save_txt, opt.img_size, opt.trace
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
         ('rtsp://', 'rtmp://', 'http://', 'https://'))
 
     save_crop = False
-    project=ROOT / 'runs/track'  # save results to project/name
-    exp_name='exp'  # save results to project/name
-    strong_sort_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt'  # model.pt path,
-    config_strongsort=ROOT / 'strong_sort/configs/strong_sort.yaml'
-    save_txt=opt.save_txt  # save results to *.txt
-    save_conf=opt.save_conf  # save confidences in --save-txt labels
-    hide_labels=opt.hide_labels  # hide labels
-    hide_conf=opt.hide_conf  # hide confidences
-    hide_class=opt.hide_class  # hide IDs
-    count= opt.count
-    save_vid=opt.save_vid
-    save_img=opt.save_img
-    line_thickness=opt.line_thickness
-    draw=opt.draw 
-
+    strong_sort_weights = WEIGHTS / 'osnet_x0_25_msmt17.pt'  # model.pt path
+    save_txt = opt.save_txt  # save results to *.txt
+    save_conf = opt.save_conf  # save confidences in --save-txt labels
+    hide_labels = opt.hide_labels  # hide labels
+    hide_conf = opt.hide_conf  # hide confidences
+    hide_class = opt.hide_class  # hide IDs
+    count = opt.count
+    save_vid = opt.save_vid
+    save_img = opt.save_img
+    line_thickness = opt.line_thickness
+    draw = opt.draw 
+    # view_img = check_imshow() ### Find a fix to also run in Colab
 
     # Directories
     save_dir = Path(increment_path(Path(opt.project) / opt.exp_name, exist_ok=opt.exist_ok))  # increment run
@@ -104,16 +101,17 @@ def detect(save_img=False, line_thickness=1):
         modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
 
     # Set Dataloader
-    vid_path, vid_writer = None, None
+    # vid_path, vid_writer = None, None
     if webcam:
-        view_img = check_imshow()
+        # view_img = check_imshow() ### Find a fix to also run in Colab
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride)
         nr_sources = len(dataset)
     else:
         dataset = LoadImages(source, img_size=imgsz, stride=stride)
         nr_sources = 1
-    vid_path, vid_writer, txt_path = [None] * nr_sources, [None] * nr_sources, [None] * nr_sources
+    # vid_path, vid_writer, txt_path = [None] * nr_sources, [None] * nr_sources, [None] * nr_sources
+    to_check_vid_change, vid_writer = None, None
 
     # initialize StrongSORT
     cfg = get_config()
@@ -132,13 +130,13 @@ def detect(save_img=False, line_thickness=1):
                 n_init=cfg.STRONGSORT.N_INIT,
                 nn_budget=cfg.STRONGSORT.NN_BUDGET,
                 mc_lambda=cfg.STRONGSORT.MC_LAMBDA,
-                ema_alpha=cfg.STRONGSORT.EMA_ALPHA,
-
+                ema_alpha=cfg.STRONGSORT.EMA_ALPHA
             )
         )
+    
     outputs = [None] * nr_sources
 
-    trajectory = {}
+    trajectory = defaultdict(list)
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
@@ -146,8 +144,9 @@ def detect(save_img=False, line_thickness=1):
     # Run inference
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+    
     t0 = time.time()
-
+    
     # Run tracking
     # model.warmup(imgsz=(1 if pt else nr_sources, 3, *imgsz))  # warmup
     dt, seen = [0.0, 0.0, 0.0, 0.0], 0
@@ -159,11 +158,9 @@ def detect(save_img=False, line_thickness=1):
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
         t2 = time_synchronized()
         dt[0] += t2 - t1
-
+        
         # Inference
         pred = model(img, augment=opt.augment)[0]
         t3 = time_synchronized()
@@ -175,9 +172,7 @@ def detect(save_img=False, line_thickness=1):
         # Apply Classifier
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
-
-
-
+        
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -185,20 +180,19 @@ def detect(save_img=False, line_thickness=1):
             else:
                 p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
 
-
             curr_frames[i] = im0
             p = Path(p)  # to Path
-            txt_file_name = p.name
+            # txt_file_name = p.name ### ????
             save_path = str(save_dir / p.name)  # im.jpg, vid.mp4, .
-            txt_path = str(save_dir / 'labels' / p.stem)  # im.txt
+            txt_path = f'{save_dir / "labels" / p.stem}.txt'  # im.txt
 
             s += '%gx%g ' % img.shape[2:]  # print string
-            imc = im0.copy() if save_crop else im0  # for save_crop
+            # imc = im0.copy() if save_crop else im0  # for save_crop ### ????
             if cfg.STRONGSORT.ECC:  # camera motion compensation
                 strongsort_list[i].tracker.camera_update(prev_frames[i], curr_frames[i])
-
-            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            if len(det):
+            
+            # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh ### ????
+            if det.any():
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
@@ -207,59 +201,47 @@ def detect(save_img=False, line_thickness=1):
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
-                xywhs = xyxy2xywh(det[:, 0:4])
+                xywhs = xyxy2xywh(det[:, 0:4]).type(torch.int)
                 confs = det[:, 4]
-                clss = det[:, 5]
+                clss = det[:, 5].type(torch.uint8)
 
                 # pass detections to strongsort
                 t4 = time_synchronized()
                 outputs[i] = strongsort_list[i].update(xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
                 t5 = time_synchronized()
                 dt[3] += t5 - t4
-
-
+                
                 # draw boxes for visualization
-                if len(outputs[i]) > 0:
-                    for j, (output, conf) in enumerate(zip(outputs[i], confs)):
-    
+                if outputs[i].any():
+                    for output in outputs[i]:
                         bboxes = output[0:4]
-                        id = output[4]
-                        cls = output[5]
+                        track_id, cls, conf = output[4:]
 
                         if draw:
                             # object trajectory
                             center = ((int(bboxes[0]) + int(bboxes[2])) // 2,(int(bboxes[1]) + int(bboxes[3])) // 2)
-                            if id not in trajectory:
-                                trajectory[id] = []
-                            trajectory[id].append(center)
-                            for i1 in range(1,len(trajectory[id])):
-                                if trajectory[id][i1-1] is None or trajectory[id][i1] is None:
-                                    continue
-                                # thickness = int(np.sqrt(1000/float(i1+10))*0.3)
-                                thickness = 2
+                            trajectory[track_id].append(center)
+                            for c in range(-1, -21, -1): # Draw only the last 20 points
                                 try:
-                                  cv2.line(im0, trajectory[id][i1 - 1], trajectory[id][i1], (0, 0, 255), thickness)
-                                except:
-                                  pass
+                                    c1, c0 = trajectory[track_id][c], trajectory[track_id][c-1]
+                                except IndexError:
+                                    break
+                                cv2.line(im0, c0, c1, colors[cls], line_thickness + 2)
 
                         if save_txt:
-                            # to MOT format
-                            bbox_left = output[0]
-                            bbox_top = output[1]
-                            bbox_w = output[2] - output[0]
-                            bbox_h = output[3] - output[1]
-                            # Write MOT compliant results to file
-                            with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
-                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))
+                            # frame_id, clas_id, track_id, xyxy bbox, detection conf
+                            result_line = ' '.join(['%d'] * 7) %(frame_idx + 1, cls, track_id, *output[0:2], 
+                                                                 *(output[[2, 3]] - output[[0, 1]] + 0.5))
+                            result_line += f' {conf:.2e}\n' if save_conf else '\n' 
+                            with open(txt_path, 'a') as f:
+                                f.write(result_line)
 
                         if save_vid or save_crop or show_vid :  # Add bbox to image
-                            c = int(cls)  # integer class
-                            id = int(id)  # integer id
-                            label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
-                                (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
-                            plot_one_box(bboxes, im0, label=label, color=colors[int(cls)], line_thickness=line_thickness)
-
+                            label = None if hide_labels else (str(track_id) if hide_conf and hide_class else \
+                                                              f'{track_id} {names[cls]}' if hide_conf else \
+                                                              f'{track_id} {conf:.2f}' if hide_class else \
+                                                              f'{track_id} {names[cls]} {conf:.2f}')
+                            plot_one_box(bboxes, im0, label=label, color=colors[cls], line_thickness=line_thickness)
 
                 ### Print time (inference + NMS)
                 print(f'{s}Done. YOLO:({t3 - t2:.3f}s), StrongSORT:({t5 - t4:.3f}s)')
@@ -268,22 +250,18 @@ def detect(save_img=False, line_thickness=1):
                 strongsort_list[i].increment_ages()
                 print('No detections')
 
-
             if count:
-                itemDict={}
+                itemDict = {}
                 ## NOTE: this works only if save-txt is true
                 try:
-                    df = pd.read_csv(txt_path +'.txt' , header=None, delim_whitespace=True)
-                    df = df.iloc[:,0:3]
-                    df.columns=["frameid" ,"class","trackid"]
-                    df = df[['class','trackid']]
-                    df = (df.groupby('trackid')['class']
-                              .apply(list)
-                              .apply(lambda x:sorted(x))
-                             ).reset_index()
+                    df = pd.read_csv(txt_path, header=None, delim_whitespace=True)
+                    df = df.iloc[:, 0:3]
+                    df.columns = ["frame_id", "class", "track_id"]
+                    df = df[['class','track_id']]
+                    df = df.groupby('track_id')['class'].apply(list).apply(lambda x: sorted(x)).reset_index()
 
-                    df.colums = ["trackid","class"]
-                    df['class']=df['class'].apply(lambda x: Counter(x).most_common(1)[0][0])
+                    df.colums = ["track_id", "class"]
+                    df['class'] = df['class'].apply(lambda x: Counter(x).most_common(1)[0][0])
                     vc = df['class'].value_counts()
                     vc = dict(vc)
 
@@ -292,7 +270,6 @@ def detect(save_img=False, line_thickness=1):
                         vc2[key] = val
                     itemDict = dict((vc2[key], value) for (key, value) in vc.items())
                     itemDict  = dict(sorted(itemDict.items(), key=lambda item: item[0]))
-                    # print(itemDict)
 
                 except:
                     pass
@@ -301,49 +278,50 @@ def detect(save_img=False, line_thickness=1):
                     ## overlay
                     display = im0.copy()
                     h, w = im0.shape[0], im0.shape[1]
-                    x1,y1,x2,y2 = 10,10,10,70
+                    x1, y1, x2, y2 = 10, 10, 10, 70
                     txt_size = cv2.getTextSize(str(itemDict), cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
                     cv2.rectangle(im0, (x1, y1 + 1), (txt_size[0] * 2, y2),(0, 0, 0),-1)
                     cv2.putText(im0, '{}'.format(itemDict), (x1 + 10, y1 + 35), cv2.FONT_HERSHEY_SIMPLEX,0.7, (210, 210, 210), 2)
                     cv2.addWeighted(im0, 0.7, display, 1 - 0.7, 0, im0)
-
-
-            #current frame // tesing
-            cv2.imwrite('testing.jpg',im0)
-
+            
+            # current frame // tesing
+            # cv2.imwrite('testing.jpg', im0)
 
             # Stream results
-            if show_vid:
-                inf = (f'{s}Done. ({t2 - t1:.3f}s)')
-                # cv2.putText(im0, str(inf), (30,160), cv2.FONT_HERSHEY_SIMPLEX,0.7,(40,40,40),2)
-                cv2.imshow(str(p), im0)
-                if cv2.waitKey(1) == ord('q'):  # q to quit
-                    break
+            # if show_vid:
+            #     inf = (f'{s}Done. ({t2 - t1:.3f}s)')
+            #     # cv2.putText(im0, str(inf), (30, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (40, 40, 40), 2)
+            #     cv2.imshow(str(p), im0) ### Find a fix to also run in Colab
+            #     if cv2.waitKey(1) == ord('q'):  # q to quit
+            #         break
 
             # Save results (image with detections)
-            if save_img:
-                if dataset.mode == 'image':
-                    cv2.imwrite(save_path, im0)
-            if save_vid:
-                if vid_path != save_path:  # new video
-                    vid_path = save_path
-                    if isinstance(vid_writer, cv2.VideoWriter):
+            if save_img and dataset.mode == 'image':
+                cv2.imwrite(save_path, im0)
+            if save_vid and dataset.mode == 'video':
+                if to_check_vid_change != save_path:
+                    to_check_vid_change = save_path
+                    if vid_writer is not None:
                         vid_writer.release()  # release previous video writer
-                    if vid_cap:  # video
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    else:  # stream
-                        fps, w, h = 30, im0.shape[1], im0.shape[0]
-                        save_path += '.mp4'
-                    vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                    # if vid_cap is not None:  # video
+                    #     fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                    #     w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    #     h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    # else:  # stream
+                    #     fps, w, h = 30, im0.shape[1], im0.shape[0]
+                    #     save_path += '.mp4'
+                    fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                    w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    fourcc = int(vid_cap.get(cv2.CAP_PROP_FOURCC))
+                    vid_writer = cv2.VideoWriter(save_path, fourcc, fps, (w, h))
                 vid_writer.write(im0)
 
             prev_frames[i] = curr_frames[i]
 
     if save_txt or save_vid or save_img:
-        print(f"Results saved to ",save_dir)
-    print(f'Done. ({time.time() - t0:.3f}s)')
+        print(f'Results saved to {save_dir}')
+    print(f'All done in {time.time() - t0:.3f}s')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -369,7 +347,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp-name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--trace', action='store_true', help='trace model')
-    parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=2, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--hide-class', default=False, action='store_true', help='hide IDs')
@@ -381,9 +359,7 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         if opt.update:  # update all models (to fix SourceChangeWarning)
-            detect()
+            detect(opt)
             strip_optimizer(opt.weights)
         else:
-            detect()
-
-            
+            detect(opt)
