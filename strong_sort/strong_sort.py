@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import sys
 import gdown
-from os.path import exists as file_exists, join
+import os.path as osp
 
 from .sort.nn_matching import NearestNeighborDistanceMetric
 from .sort.detection import Detection
@@ -14,48 +14,57 @@ from torchreid.utils.tools import download_url
 
 __all__ = ['StrongSORT']
 
+# Pre-trained model from https://github.com/KaiyangZhou/deep-person-reid
+DEFAULT_EXTRACTOR = ('osnet_x1_0', 'https://drive.google.com/uc?id=1LaG1EJpHrxdAxKnSCJ_i0u-nbxSAeiFY')
+EXTRACTOR_PATH = '%s_imagenet.pth' %(
+    osp.abspath(osp.join(osp.dirname(__file__), "..", "weights", DEFAULT_EXTRACTOR[0])))
+
 
 class StrongSORT(object):
-    def __init__(self, 
-                 model_weights,
-                 device, max_dist=0.2,
-                 max_iou_distance=0.7,
-                 max_age=70, n_init=3,
-                 nn_budget=100,
-                 mc_lambda=0.995,
-                 ema_alpha=0.9
-                ):
-        model_name = get_model_name(model_weights)
-        model_url = get_model_url(model_weights)
+    def __init__(
+            self, 
+            device, 
+            max_dist = 0.2, 
+            nn_budget = 100, 
+            max_iou_distance = 0.7, 
+            max_age = 70, 
+            n_init = 3, 
+            ema_alpha = 0.9, 
+            mc_lambda = 0.995, 
+            matching_cascade = False
+        ):
+        if not osp.isfile(EXTRACTOR_PATH):
+            print(f'Feature extractor not found in {EXTRACTOR_PATH}')
+            print(f'Downloading from torchreid model zoo...')
+            print('    - Downloading {} from {}'.format(*DEFAULT_EXTRACTOR))
+            print('    - To {}'.format(EXTRACTOR_PATH))
+            download_url(DEFAULT_EXTRACTOR[1], EXTRACTOR_PATH)
 
-        if not file_exists(model_weights) and model_url is not None:
-            gdown.download(model_url, str(model_weights), quiet=False)
-        elif file_exists(model_weights):
-            pass
-        elif model_url is None:
-            print('No URL associated to the chosen DeepSort weights. Choose between:')
-            show_downloadeable_models()
-            exit()
+        assert osp.isfile(EXTRACTOR_PATH), 'Couldn\'t load feature extractor.'
 
         self.extractor = FeatureExtractor(
-            # get rid of dataset information DeepSort model name
-            model_name=model_name,
-            model_path=model_weights,
-            device=str(device)
+            model_name=DEFAULT_EXTRACTOR[0], 
+            model_path=EXTRACTOR_PATH, 
+            device=str(device), 
+            image_size=(256, 128), 
+            pixel_norm=False, 
+            verbose=False
         )
 
         self.max_dist = max_dist
         metric = NearestNeighborDistanceMetric("cosine", self.max_dist, nn_budget)
         self.tracker = Tracker(
-            metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
+            metric, max_iou_distance, max_age, n_init, ema_alpha, mc_lambda, matching_cascade)
 
     def update(self, bbox_xywh, confidences, classes, ori_img):
         self.height, self.width = ori_img.shape[:2]
         # generate detections
         features = self._get_features(bbox_xywh, ori_img)
         bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)
-        detections = [Detection(bbox_tlwh[i], conf, features[i]) for i, conf in enumerate(
-            confidences)]
+        detections = [
+            Detection(classes[i], bbox_tlwh[i], conf, features[i]) \
+            for i, conf in enumerate(confidences)
+        ]
 
         # run on non-maximum supression
         # boxes = np.array([d.tlwh for d in detections]) ### ????

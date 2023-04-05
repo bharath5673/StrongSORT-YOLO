@@ -9,8 +9,8 @@ INFTY_COST = 1e+5
 
 
 def min_cost_matching(
-        distance_metric, max_distance, tracks, detections, track_indices=None,
-        detection_indices=None):
+        distance_metric, max_distance, tracks, detections, 
+        track_indices = None, detection_indices = None):
     """Solve linear assignment problem.
     Parameters
     ----------
@@ -49,10 +49,10 @@ def min_cost_matching(
     if len(detection_indices) == 0 or len(track_indices) == 0:
         return [], track_indices, detection_indices  # Nothing to match.
 
-    cost_matrix = distance_metric(
-        tracks, detections, track_indices, detection_indices)
-    cost_matrix[cost_matrix > max_distance] = max_distance + 1e-5
-    row_indices, col_indices = linear_sum_assignment(cost_matrix)
+    cost_matrix = distance_metric(tracks, detections, track_indices, detection_indices)
+    cost_matrix[cost_matrix > max_distance] = max_distance + INFTY_COST
+
+    row_indices, col_indices = linear_sum_assignment(cost_matrix.copy())
 
     matches, unmatched_tracks, unmatched_detections = [], [], []
     for col, detection_idx in enumerate(detection_indices):
@@ -74,7 +74,7 @@ def min_cost_matching(
 
 def matching_cascade(
         distance_metric, max_distance, cascade_depth, tracks, detections,
-        track_indices=None, detection_indices=None):
+        track_indices = None, detection_indices = None, matching_cascade = False):
     """Run matching cascade.
     Parameters
     ----------
@@ -112,31 +112,45 @@ def matching_cascade(
         track_indices = list(range(len(tracks)))
     if detection_indices is None:
         detection_indices = list(range(len(detections)))
-
+    
     unmatched_detections = detection_indices
     matches = []
-    track_indices_l = [
-        k for k in track_indices
-        # if tracks[k].time_since_update == 1 + level
-    ]
-    matches_l, _, unmatched_detections = \
-        min_cost_matching(
-            distance_metric, max_distance, tracks, detections,
-            track_indices_l, unmatched_detections)
-    matches += matches_l
+    
+    if matching_cascade:
+        for level in range(cascade_depth):
+            if not len(unmatched_detections):  # No detections left
+                break
+
+            track_indices_l = [
+                k for k in track_indices
+                if tracks[k].time_since_update == 1 + level
+            ]
+            
+            if not len(track_indices_l):  # Nothing to match at this level
+                continue
+
+            matches_l, _, unmatched_detections = min_cost_matching(
+                distance_metric, max_distance, tracks, detections, track_indices_l, unmatched_detections)
+            matches += matches_l
+    else:
+        track_indices_l = track_indices
+        matches_l, _, unmatched_detections = min_cost_matching(
+            distance_metric, max_distance, tracks, detections, track_indices_l, unmatched_detections)
+        matches += matches_l
+
     unmatched_tracks = list(set(track_indices) - set(k for k, _ in matches))
     return matches, unmatched_tracks, unmatched_detections
 
 
 def gate_cost_matrix(
-        cost_matrix, tracks, detections, track_indices, detection_indices,
-        gated_cost=INFTY_COST, only_position=False):
+        appearance_cost, tracks, detections, track_indices, detection_indices,
+        mc_lambda, gated_cost = INFTY_COST, only_position = False):
     """Invalidate infeasible entries in cost matrix based on the state
     distributions obtained by Kalman filtering.
     Parameters
     ----------
     kf : The Kalman filter.
-    cost_matrix : ndarray
+    appearance_cost : ndarray
         The NxM dimensional cost matrix, where N is the number of track indices
         and M is the number of detection indices, such that entry (i, j) is the
         association cost between `tracks[track_indices[i]]` and
@@ -146,10 +160,10 @@ def gate_cost_matrix(
     detections : List[detection.Detection]
         A list of detections at the current time step.
     track_indices : List[int]
-        List of track indices that maps rows in `cost_matrix` to tracks in
+        List of track indices that maps rows in `appearance_cost` to tracks in
         `tracks` (see description above).
     detection_indices : List[int]
-        List of detection indices that maps columns in `cost_matrix` to
+        List of detection indices that maps columns in `appearance_cost` to
         detections in `detections` (see description above).
     gated_cost : Optional[float]
         Entries in the cost matrix corresponding to infeasible associations are
@@ -164,11 +178,12 @@ def gate_cost_matrix(
     """
     gating_dim = 2 if only_position else 4
     gating_threshold = kalman_filter.chi2inv95[gating_dim]
-    measurements = np.asarray(
-        [detections[i].to_xyah() for i in detection_indices])
+    measurements = np.asarray([detections[i].to_xyah() for i in detection_indices])
+    motion_cost = np.zeros_like(appearance_cost)
     for row, track_idx in enumerate(track_indices):
         track = tracks[track_idx]
-        gating_distance = track.kf.gating_distance(track.mean, track.covariance, measurements, only_position)
-        cost_matrix[row, gating_distance > gating_threshold] = gated_cost
-        cost_matrix[row] = 0.995 * cost_matrix[row] + (1 - 0.995) *  gating_distance
-    return cost_matrix
+        motion_cost[row] = track.kf.gating_distance(
+            track.mean, track.covariance, measurements, only_position)
+    appearance_cost[motion_cost > gating_threshold] = gating_threshold + gated_cost
+    appearance_cost[:] = mc_lambda * appearance_cost + (1 - mc_lambda) * motion_cost
+    return appearance_cost
