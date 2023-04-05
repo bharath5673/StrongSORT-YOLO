@@ -71,11 +71,10 @@ def increment_file_path(path):
 
 def _save_opt(opt, save_dir, exist_ok):
     args = vars(opt)
-    padding = max(len(k) for k in args.keys)
-    lines = [f'{k: <{padding}} : {v}\n' for k, v in args]
+    padding = max(len(k) for k in args.keys())
+    lines = [f'{k: <{padding}} : {v}\n' for k, v in args.items()]
     dest_path = os.path.abspath(os.path.join(save_dir, 'arguments.txt'))
-    with not exist_ok:
-        dest_path = increment_file_path(dest_path)
+    dest_path = dest_path if exist_ok else increment_file_path(dest_path)
     with open(dest_path, mode='w') as opt_file:
         opt_file.writelines(lines)
 
