@@ -194,8 +194,12 @@ def detect(opt):
         # Process detections
         detections = pred[0] # Only one batch was forward in the detection
         frame_id = getattr(dataset, 'frame', dataset.count)
+        total_frames = getattr(dataset, 'nframes', dataset.nf - sum(dataset.video_flag))
 
-        s = '%gx%g |' % img.shape[2:][::-1]  # print string
+        result_message = 'source %d/%d (%dx%d %s) | frame %d/%d |' %(
+            dataset.count + 1, dataset.nf, *img.shape[2:][::-1], 
+            dataset.mode, frame_id, total_frames)
+        
         if opt.ecc:  # camera motion compensation
             strong_sort.tracker.camera_update(prev_frames, curr_frames)
         
@@ -204,18 +208,17 @@ def detect(opt):
             # Rescale boxes from img_size to im0 size
             detections[:, :4] = scale_coords(img.shape[2:], detections[:, :4], im0.shape).round()
 
-            # Print results
-            for c in detections[:, -1].unique():
-                n = (detections[:, -1] == c).sum()  # detections per class
-                s += f" {names[int(c)]} x{n}"  # add to string
-
             xywhs = xyxy2xywh(detections[:, 0:4]).type(torch.int16)
             confs = detections[:, 4]
-            clss = detections[:, 5].type(torch.int16) # uint16 type is not supported by pytorch
+            classes = detections[:, 5].type(torch.int16) # uint16 type is not supported by pytorch
+
+            cls_counts = zip(*torch.unique(classes, return_counts=True))
+            cls_counts = [f'{names[i.item()]} x{j.item()}' for i, j in cls_counts]
+            result_message += f' {" ".join(cls_counts)} |'
 
             # pass detections to strongsort
             t4 = time_synchronized()
-            sort_output = strong_sort.update(xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
+            sort_output = strong_sort.update(xywhs.cpu(), confs.cpu(), classes.cpu(), im0)
             t5 = time_synchronized()
             dt[3] += t5 - t4
             
@@ -251,13 +254,13 @@ def detect(opt):
                                                               f'{track_id} {names[cls]} {conf:.2f}')
                         plot_one_box(bbox, im0, label=label, color=colors[cls], line_thickness=opt.line_thickness)
 
-            ### Print time (inference + NMS)
-            print(f'{s} | Done. YOLO:({dt[1]:.3e}s), StrongSORT:({dt[3]:.3e}s)')
-
         else:
             strong_sort.increment_ages()
-            print(f'{s} None detections | Done. YOLO:({dt[1]:.3e}s), StrongSORT:({dt[3]:.3e}s)')
+            result_message += ' None detections |'
 
+        if opt.verbose:
+            print(f'{result_message} YOLO {dt[1]:.3e}s, StrongSORT {dt[3]:.3e}s')
+        
         # if opt.count:
         #     itemDict = {}
         #     ## NOTE: this works only if save-txt is true
@@ -297,20 +300,20 @@ def detect(opt):
 
         # Stream results
         # if show_vid:
-        #     inf = (f'{s}Done. ({t2 - t1:.3f}s)')
+        #     inf = (f'{result_message}Done. ({t2 - t1:.3f}s)')
         #     # cv2.putText(im0, str(inf), (30, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (40, 40, 40), 2)
         #     cv2.imshow(str(p), im0) ### Find a fix to also run in Colab
         #     if cv2.waitKey(1) == ord('q'):  # q to quit
         #         break
 
         if opt.save_img:
-            padding = len(str(getattr(dataset, 'nframes', dataset.nf - sum(dataset.video_flag))))
+            padding = len(str(total_frames))
             file_name = f'{frame_id:0>{padding}}_{path_base_name}.jpg'
             if dataset.mode == 'image':
                 save_img_result = cv2.imwrite(str(save_dir / 'images' / 'imgs' / file_name), im0)
             else:
                 save_img_result = cv2.imwrite(str(save_dir / 'images' / path_base_name / file_name), im0)
-            if not save_img_result:
+            if not save_img_result and opt.verbose:
                 print('Error while saving image/frame:')
                 print('    - ID   :', frame_id)
                 print('    - File :', path)
@@ -402,6 +405,12 @@ if __name__ == '__main__':
         '--device', 
         default='cpu', 
         help='cuda device, i.e. 0 or 0,1,2,3 or cpu'
+    )
+
+    parser.add_argument(
+        '--verbose', 
+        action='store_true', 
+        help='report tracking informations'
     )
 
     ### Saving results
