@@ -247,7 +247,7 @@ def detect(opt):
                         with open(txt_path, 'a') as f:
                             f.write(result_line)
 
-                    if opt.save_vid or opt.show_vid :  # Add bbox to image
+                    if opt.save_vid:  # Add bbox to image
                         label = None if opt.hide_labels else (str(track_id) if opt.hide_conf and opt.hide_class else \
                                                               f'{track_id} {names[cls]}' if opt.hide_conf else \
                                                               f'{track_id} {conf:.2f}' if opt.hide_class else \
