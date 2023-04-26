@@ -239,8 +239,8 @@ def detect(opt):
                             cv2.line(im0, c0, c1, colors[cls], 3)
 
                     if opt.save_txt:
-                        # frame_id, clas_id, track_id, tlwh bbox, detection conf
-                        result_line = ' '.join(['%d'] * 7) %(frame_id, cls, track_id, 
+                        # frame_id, track_id, clas_id, tlwh bbox, detection conf
+                        result_line = ' '.join(['%d'] * 7) %(frame_id, track_id, cls, 
                                                              bbox[[0, 2]].min(), bbox[[1, 3]].min(), 
                                                              *np.abs(bbox[[2, 3]] - bbox[[0, 1]]))
                         result_line += f' {conf:.2e}\n' if opt.save_conf else '\n' 
