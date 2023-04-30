@@ -33,29 +33,49 @@ class Tracker:
     tracks : List[Track]
         The list of active tracks at the current time step.
     """
-    GATING_THRESHOLD = kalman_filter.chi2inv95[4]
 
     def __init__(
             self, 
-            metric, 
+            appearance_metric, 
+            max_appearance_distance = 0.2,
             max_iou_distance = 0.9, 
             max_age = 30, 
             n_init = 3, 
             ema_alpha = 0.9, 
-            mc_lambda = 0.995,
-            matching_cascade = False
+            mc_lambda = 0.995, 
+            matching_cascade = False, 
+            only_position = False, 
+            motion_gate_coefficient = 1.0,
+            max_centroid_distance = None
         ):
-        self.metric = metric
+        self.appearance_metric = appearance_metric
+        self.max_appearance_distance = max_appearance_distance
+        self.max_motion_distance = kalman_filter.chi2inv95[2 if only_position else 4] * motion_gate_coefficient
         self.max_iou_distance = max_iou_distance
+        self.max_centroid_distance = max_centroid_distance
         self.max_age = max_age
         self.n_init = n_init
         self.ema_alpha = ema_alpha
         self.mc_lambda = mc_lambda
         self.matching_cascade = matching_cascade
+        self.only_position = only_position
 
-        self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
         self._next_id = 1
+
+    def centroid_gate(self, tracks, detections, track_indices, detection_indices):
+        tks_centroids = np.array(
+            [tracks[i].last_associated_bbox()[:2] for i in track_indices], dtype=np.int32)
+        dts_centroids = np.array(
+            [detections[i].to_xyah()[:2] for i in detection_indices], dtype=np.int32)
+        return np.array(
+            [np.linalg.norm(dts_centroids - c, axis=1) > self.max_centroid_distance for c in tks_centroids])
+
+    def gated_iou_metric(self, *args, **kwargs):
+        cost_matrix = iou_matching.iou_cost(*args, **kwargs)
+        gate = cost_matrix > self.max_iou_distance
+        cost_matrix[gate] = cost_matrix[gate] + linear_assignment.INFTY_COST
+        return cost_matrix
 
     def predict(self):
         """Propagate track state distributions one time step forward.
@@ -63,7 +83,7 @@ class Tracker:
         This function should be called once every time step, before `update`.
         """
         for track in self.tracks:
-            track.predict(self.kf)
+            track.predict()
 
     def increment_ages(self):
         for track in self.tracks:
@@ -105,60 +125,42 @@ class Tracker:
                 continue
             features += track.features
             targets += [track.track_id for _ in track.features]
-        self.metric.partial_fit(np.asarray(features), np.asarray(targets), active_targets)
+        self.appearance_metric.partial_fit(np.asarray(features), np.asarray(targets), active_targets)
 
-    # def _full_cost_metric(self, tracks, dets, track_indices, detection_indices):
-    #     """
-    #     This implements the full lambda-based cost-metric. However, in doing so, it disregards
-    #     the possibility to gate the position only which is provided by
-    #     linear_assignment.gate_cost_matrix(). Instead, I gate by everything.
-    #     Note that the Mahalanobis distance is itself an unnormalised metric. Given the cosine
-    #     distance being normalised, we employ a quick and dirty normalisation based on the
-    #     threshold: that is, we divide the positional-cost by the gating threshold, thus ensuring
-    #     that the valid values range 0-1.
-    #     Note also that the authors work with the squared distance. I also sqrt this, so that it
-    #     is more intuitive in terms of values.
-    #     """
-    #     # Compute First the Position-based Cost Matrix
-    #     pos_cost = np.empty([len(track_indices), len(detection_indices)])
-    #     msrs = np.asarray([dets[i].to_xyah() for i in detection_indices])
-    #     for row, track_idx in enumerate(track_indices):
-    #         pos_cost[row, :] = np.sqrt(
-    #             self.kf.gating_distance(
-    #                 tracks[track_idx].mean, tracks[track_idx].covariance, msrs, False
-    #             )
-    #         ) / self.GATING_THRESHOLD
-    #     pos_gate = pos_cost > 1.0
-    #     # Now Compute the Appearance-based Cost Matrix
-    #     app_cost = self.metric.distance(
-    #         np.array([dets[i].feature for i in detection_indices]),
-    #         np.array([tracks[i].track_id for i in track_indices]),
-    #     )
-    #     app_gate = app_cost > self.metric.matching_threshold
-    #     # Now combine and threshold
-    #     cost_matrix = self._lambda * pos_cost + (1 - self._lambda) * app_cost
-    #     cost_matrix[np.logical_or(pos_gate, app_gate)] = linear_assignment.INFTY_COST
-    #     # Return Matrix
-    #     return cost_matrix
+    def gated_metric(self, tracks, detections, track_indices, detection_indices):
+        features = np.array([detections[i].feature for i in detection_indices])
+        measurements = np.asarray([detections[i].to_xyah() for i in detection_indices])
+        targets = np.array([tracks[i].track_id for i in track_indices])
+        # Appearance cost
+        appearance_cost_matrix = self.appearance_metric.distance(features, targets) # Num_targets x Num_features
+        # Motion cost
+        motion_cost_matrix = np.zeros_like(appearance_cost_matrix)
+        for row, track_idx in enumerate(track_indices):
+            track = tracks[track_idx]
+            motion_cost_matrix[row] = track.kf.gating_distance(
+                track.mean, track.covariance, measurements, self.only_position)
+        # Gate
+        gate = np.logical_or(
+            appearance_cost_matrix > self.max_appearance_distance,
+            motion_cost_matrix > self.max_motion_distance)
+        if self.max_centroid_distance is not None:
+            gate[:] = np.logical_or(
+                gate, self.centroid_gate(tracks, detections, track_indices, detection_indices))
+        # Final cost matrix
+        lmb = self.mc_lambda
+        appearance_cost_matrix[:] = lmb * appearance_cost_matrix + (1 - lmb) * motion_cost_matrix
+        appearance_cost_matrix[gate] = appearance_cost_matrix[gate] + linear_assignment.INFTY_COST
+        return appearance_cost_matrix
 
-    def _match(self, detections):
-
-        def gated_metric(tracks, detections, track_indices, detection_indices):
-            features = np.array([detections[i].feature for i in detection_indices])
-            targets = np.array([tracks[i].track_id for i in track_indices])
-            cost_matrix = self.metric.distance(features, targets) # cost matrix (Num_targets, Num_features)
-            cost_matrix = linear_assignment.gate_cost_matrix(
-                cost_matrix, tracks, detections, track_indices, detection_indices, self.mc_lambda)
-            return cost_matrix
-        
+    def _match(self, detections):        
         # Split track set into confirmed and unconfirmed tracks.
         confirmed_tracks = [i for i, t in enumerate(self.tracks) if t.is_confirmed()]
         unconfirmed_tracks = [i for i, t in enumerate(self.tracks) if not t.is_confirmed()]
 
         # Associate confirmed tracks using appearance and motion cost.
         matches_a, unmatched_tracks_a, unmatched_detections = linear_assignment.matching_cascade(
-            gated_metric, self.metric.matching_threshold, self.max_age, 
-            self.tracks, detections, confirmed_tracks, matching_cascade=self.matching_cascade)
+            self.gated_metric, self.max_age, self.tracks, detections, 
+            confirmed_tracks, matching_cascade=self.matching_cascade)
 
         # Associate remaining tracks together with unconfirmed tracks using IOU.
         iou_track_candidates = unconfirmed_tracks + [
@@ -169,8 +171,8 @@ class Tracker:
             self.tracks[k].time_since_update != 1]
         matches_b, unmatched_tracks_b, unmatched_detections = \
             linear_assignment.min_cost_matching(
-                iou_matching.iou_cost, self.max_iou_distance, self.tracks,
-                detections, iou_track_candidates, unmatched_detections)
+                self.gated_iou_metric, self.tracks, detections, 
+                iou_track_candidates, unmatched_detections)
 
         matches = matches_a + matches_b
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
@@ -179,8 +181,8 @@ class Tracker:
     def _initiate_track(self, detection, class_id, conf):
         self.tracks.append(
             Track(
-                detection.to_xyah(), self._next_id, class_id, conf, 
-                self.n_init, self.max_age, self.ema_alpha, detection.feature
+                detection, self._next_id, class_id, conf, 
+                self.n_init, self.max_age, self.ema_alpha
             )
         )
         self._next_id += 1

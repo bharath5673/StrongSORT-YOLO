@@ -9,8 +9,7 @@ INFTY_COST = 1e+5
 
 
 def min_cost_matching(
-        distance_metric, max_distance, tracks, detections, 
-        track_indices = None, detection_indices = None):
+        distance_metric, tracks, detections, track_indices = None, detection_indices = None):
     """Solve linear assignment problem.
     Parameters
     ----------
@@ -20,9 +19,6 @@ def min_cost_matching(
         return the NxM dimensional cost matrix, where element (i, j) is the
         association cost between the i-th track in the given track indices and
         the j-th detection in the given detection_indices.
-    max_distance : float
-        Gating threshold. Associations with cost larger than this value are
-        disregarded.
     tracks : List[track.Track]
         A list of predicted tracks at the current time step.
     detections : List[detection.Detection]
@@ -50,9 +46,8 @@ def min_cost_matching(
         return [], track_indices, detection_indices  # Nothing to match.
 
     cost_matrix = distance_metric(tracks, detections, track_indices, detection_indices)
-    cost_matrix[cost_matrix > max_distance] = max_distance + INFTY_COST
 
-    row_indices, col_indices = linear_sum_assignment(cost_matrix.copy())
+    row_indices, col_indices = linear_sum_assignment(cost_matrix)
 
     matches, unmatched_tracks, unmatched_detections = [], [], []
     for col, detection_idx in enumerate(detection_indices):
@@ -64,7 +59,7 @@ def min_cost_matching(
     for row, col in zip(row_indices, col_indices):
         track_idx = track_indices[row]
         detection_idx = detection_indices[col]
-        if cost_matrix[row, col] > max_distance:
+        if cost_matrix[row, col] > INFTY_COST:
             unmatched_tracks.append(track_idx)
             unmatched_detections.append(detection_idx)
         else:
@@ -73,7 +68,7 @@ def min_cost_matching(
 
 
 def matching_cascade(
-        distance_metric, max_distance, cascade_depth, tracks, detections,
+        distance_metric, cascade_depth, tracks, detections,
         track_indices = None, detection_indices = None, matching_cascade = False):
     """Run matching cascade.
     Parameters
@@ -84,9 +79,6 @@ def matching_cascade(
         return the NxM dimensional cost matrix, where element (i, j) is the
         association cost between the i-th track in the given track indices and
         the j-th detection in the given detection indices.
-    max_distance : float
-        Gating threshold. Associations with cost larger than this value are
-        disregarded.
     cascade_depth: int
         The cascade depth, should be se to the maximum track age.
     tracks : List[track.Track]
@@ -130,12 +122,12 @@ def matching_cascade(
                 continue
 
             matches_l, _, unmatched_detections = min_cost_matching(
-                distance_metric, max_distance, tracks, detections, track_indices_l, unmatched_detections)
+                distance_metric, tracks, detections, track_indices_l, unmatched_detections)
             matches += matches_l
     else:
         track_indices_l = track_indices
         matches_l, _, unmatched_detections = min_cost_matching(
-            distance_metric, max_distance, tracks, detections, track_indices_l, unmatched_detections)
+            distance_metric, tracks, detections, track_indices_l, unmatched_detections)
         matches += matches_l
 
     unmatched_tracks = list(set(track_indices) - set(k for k, _ in matches))

@@ -101,9 +101,6 @@ class NearestNeighborDistanceMetric(object):
     ----------
     metric : str
         Either "euclidean" or "cosine".
-    matching_threshold: float
-        The matching threshold. Samples with larger distance are considered an
-        invalid match.
     budget : Optional[int]
         If not None, fix samples per class to at most this number. Removes
         the oldest samples when the budget is reached.
@@ -114,7 +111,7 @@ class NearestNeighborDistanceMetric(object):
         that have been observed so far.
     """
 
-    def __init__(self, metric, matching_threshold, budget=None):
+    def __init__(self, metric, budget=None):
         if metric == "euclidean":
             self._metric = _nn_euclidean_distance
         elif metric == "cosine":
@@ -122,7 +119,6 @@ class NearestNeighborDistanceMetric(object):
         else:
             raise ValueError(
                 "Invalid metric; must be either 'euclidean' or 'cosine'")
-        self.matching_threshold = matching_threshold
         self.budget = budget
         self.samples = {}
 

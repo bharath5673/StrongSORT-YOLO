@@ -1,7 +1,6 @@
 import os
 import sys
 import argparse
-import os
 
 # limit the number of cpus used by high performance libraries
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -37,10 +36,12 @@ if str(ROOT / 'strong_sort') not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from yolov7.models.experimental import attempt_load
-from yolov7.utils.datasets import LoadStreams, LoadImages
+from yolov7.utils.plots import get_rgb_colors
+from yolov7.utils.datasets import LoadImages
 from yolov7.utils.general import (check_img_size, check_requirements, check_imshow, 
                                   non_max_suppression, apply_classifier, scale_coords, 
-                                  xyxy2xywh, strip_optimizer, set_logging, increment_path)
+                                  xyxy2xywh, strip_optimizer, set_logging, increment_path,
+                                  save_argparser_arguments)
 from yolov7.utils.plots import plot_one_box
 from yolov7.utils.torch_utils import select_device, load_classifier, time_synchronized, TracedModel
 
@@ -51,45 +52,32 @@ from strong_sort.strong_sort import StrongSORT
 
 def _build_strong_sort(opt):
     return StrongSORT(
-        select_device(opt.device), 
-        max_dist=opt.final_gate, 
+        device=select_device(opt.device), 
+        max_appearance_distance=opt.appearance_gate, 
         nn_budget=opt.feature_bank_size, 
         max_iou_distance=opt.iou_gate, 
         max_age=opt.max_age, 
         n_init=opt.init_period, 
         ema_alpha=opt.feature_momentum, 
         mc_lambda=opt.appearance_lambda, 
-        matching_cascade=opt.matching_cascade
+        matching_cascade=opt.matching_cascade,
+        only_position=opt.motion_only_position,
+        motion_gate_coefficient=opt.motion_gate_coefficient,
+        max_centroid_distance=opt.max_centroid_distance
     )
 
-def increment_file_path(path):
-    version = 1
-    while os.path.isfile(path):
-        version += 1
-        path = version.join(os.path.splitext(path))
-    return path
-
-def _save_opt(opt, save_dir, exist_ok):
-    args = vars(opt)
-    padding = max(len(k) for k in args.keys())
-    lines = [f'{k: <{padding}} : {v}\n' for k, v in args.items()]
-    dest_path = os.path.abspath(os.path.join(save_dir, 'arguments.txt'))
-    dest_path = dest_path if exist_ok else increment_file_path(dest_path)
-    with open(dest_path, mode='w') as opt_file:
-        opt_file.writelines(lines)
 
 def detect(opt):
     assert os.path.isdir(opt.source) or os.path.isfile(opt.source), 'Source must be a video file or a directory'
     # strong_sort_weights = opt.strong_sort_weights  # re-id model.pt path
-    # view_img = check_imshow()  ### Find a fix to also run in Colab
+    # view_img = check_imshow()  # Cannot run in Colab
 
     # Directories
     save_dir = Path(
-        increment_path(Path(opt.project).absolute() / opt.name, exist_ok=opt.exist_ok)
-    )  # increment run
+        increment_path(Path(opt.project).absolute() / opt.name, exist_ok=opt.exist_ok))  # increment path
     (save_dir / 'labels' if opt.save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make labels dir
 
-    _save_opt(opt, save_dir, opt.exist_ok)
+    save_argparser_arguments(opt, str(save_dir / 'arguments.txt'), opt.exist_ok)
 
     # Initialize
     set_logging()
@@ -121,11 +109,9 @@ def detect(opt):
 
     # cfg = get_config(config_file=opt.config_strongsort)
 
-    trajectory = {}
-
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[np.random.randint(0, 255) for _ in range(3)] for _ in names]
+    colors = get_rgb_colors(len(names), cmin=50, cmax=200, gray_colors=False)
 
     # Run inference
     if device.type != 'cpu':
@@ -146,6 +132,7 @@ def detect(opt):
             if dataset.mode == 'video':
                 if not opt.video_sequence or strong_sort is None:
                     strong_sort = _build_strong_sort(opt)
+                    trajectorys = {}
                 if opt.save_img:
                     (save_dir / 'images' / path_base_name).mkdir(parents=True, exist_ok=True)
                 if opt.save_txt:
@@ -164,6 +151,7 @@ def detect(opt):
             else:
                 if strong_sort is None:
                     strong_sort = _build_strong_sort(opt)
+                    trajectorys = {}
                 if opt.save_vid and vid_writer is None:
                     vid_writer = cv2.VideoWriter(str(save_dir / 'video_from_imgs.mp4'), 
                                                  cv2.VideoWriter_fourcc(*'mp4v'), 
@@ -208,9 +196,9 @@ def detect(opt):
             # Rescale boxes from img_size to im0 size
             detections[:, :4] = scale_coords(img.shape[2:], detections[:, :4], im0.shape).round()
 
-            xywhs = xyxy2xywh(detections[:, 0:4]).type(torch.int16)
+            xyxys = detections[:, :4].type(torch.int32)
             confs = detections[:, 4]
-            classes = detections[:, 5].type(torch.int16) # uint16 type is not supported by pytorch
+            classes = detections[:, 5].type(torch.int32)
 
             cls_counts = zip(*torch.unique(classes, return_counts=True))
             cls_counts = [f'{names[i.item()]} x{j.item()}' for i, j in cls_counts]
@@ -218,41 +206,40 @@ def detect(opt):
 
             # pass detections to strongsort
             t4 = time_synchronized()
-            sort_output = strong_sort.update(xywhs.cpu(), confs.cpu(), classes.cpu(), im0)
+            sort_output = strong_sort.update(xyxys.cpu(), confs.cpu(), classes.cpu(), im0)
             t5 = time_synchronized()
             dt[3] += t5 - t4
             
             if sort_output.any():
                 for output in sort_output:
-                    bbox = output[0:4]
-                    track_id, cls, conf = output[4:]
-
+                    tlwh = output[:4]
+                    track_id, cls, conf = int(output[4]), int(output[5]), output[6]
                     if opt.draw_trajectory:
-                        # object trajectory
-                        center = int(bbox[[0, 2]].sum() / 2 + 0.5), int(bbox[[1, 3]].sum() / 2 + 0.5)
-                        trajectory.setdefault(track_id, []).append(center)
-                        for c in range(-1, -21, -1): # Draw only the last 20 points
+                        center = tuple((tlwh[:2] + tlwh[2:] / 2).round().astype(np.int32).tolist())
+                        track_trajs = trajectorys.setdefault(track_id, [])
+                        track_trajs.append(center)
+                        for c in range(-1, -21, -1):  # Draw only the last 20 points
                             try:
-                                c1, c0 = trajectory[track_id][c], trajectory[track_id][c-1]
+                                c1, c0 = track_trajs[c], track_trajs[c-1]
                             except IndexError:
                                 break
                             cv2.line(im0, c0, c1, colors[cls], 3)
 
                     if opt.save_txt:
                         # frame_id, track_id, clas_id, tlwh bbox, detection conf
-                        result_line = ' '.join(['%d'] * 7) %(frame_id, track_id, cls, 
-                                                             bbox[[0, 2]].min(), bbox[[1, 3]].min(), 
-                                                             *np.abs(bbox[[2, 3]] - bbox[[0, 1]]))
-                        result_line += f' {conf:.2e}\n' if opt.save_conf else '\n' 
+                        result_line = ' '.join(output[:7].astype(np.int32).astype(np.str_))
+                        result_line += f' {output[-1]:.2f}\n' if opt.save_conf else '\n' 
                         with open(txt_path, 'a') as f:
                             f.write(result_line)
 
                     if opt.save_vid:  # Add bbox to image
+                        xyxy = output[:4]
+                        xyxy[2:] = xyxy[:2] + xyxy[2:]
                         label = None if opt.hide_labels else (str(track_id) if opt.hide_conf and opt.hide_class else \
                                                               f'{track_id} {names[cls]}' if opt.hide_conf else \
                                                               f'{track_id} {conf:.2f}' if opt.hide_class else \
                                                               f'{track_id} {names[cls]} {conf:.2f}')
-                        plot_one_box(bbox, im0, label=label, color=colors[cls], line_thickness=opt.line_thickness)
+                        plot_one_box(xyxy, im0, label=label, color=colors[cls], line_thickness=opt.line_thickness)
 
         else:
             strong_sort.increment_ages()
@@ -302,7 +289,7 @@ def detect(opt):
         # if show_vid:
         #     inf = (f'{result_message}Done. ({t2 - t1:.3f}s)')
         #     # cv2.putText(im0, str(inf), (30, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (40, 40, 40), 2)
-        #     cv2.imshow(str(p), im0) ### Find a fix to also run in Colab
+        #     cv2.imshow(str(p), im0)  # Find a fix to also run in Colab
         #     if cv2.waitKey(1) == ord('q'):  # q to quit
         #         break
 
@@ -317,6 +304,7 @@ def detect(opt):
                 print('Error while saving image/frame:')
                 print('    - ID   :', frame_id)
                 print('    - File :', path)
+        
         if opt.save_vid:
             vid_writer.write(im0)
 
@@ -392,13 +380,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--source', 
         type=str, default='.', 
-        help='source data (video files or directory with images or/and videos) for tracking'
+        help='source data (video file or directory with images or/and videos) for tracking'
     )
 
     parser.add_argument(
         '--video-sequence', 
         action='store_true', 
-        help='keep tracker alive (don\'t reinstantiate) between videos'
+        help='keep tracker alive (do not reinstantiate) between videos'
     )
 
     parser.add_argument(
@@ -418,31 +406,31 @@ if __name__ == '__main__':
     parser.add_argument(
         '--project', 
         default='runs/track', 
-        help='save results to ./project/name'
+        help='save results to /project/name'
     )
 
     parser.add_argument(
         '--name', 
         default='exp', 
-        help='save results to ./project/name'
+        help='save results to /project/name'
     )
 
     parser.add_argument(
         '--exist-ok', 
         action='store_true', 
-        help='existing ./project/name ok, do not increment'
+        help='existing /project/name ok, do not increment dir path'
     )
 
     parser.add_argument(
         '--save-txt', 
         action='store_true', 
-        help='save tracking results to ./project/name/labels/*.txt'
+        help='save tracking results to /project/name/labels/*.txt'
     )
 
     parser.add_argument(
         '--save-img', 
         action='store_true', 
-        help='save processed images/frames to ./project/name/images/*/*.jpg'
+        help='save processed images/frames to /project/name/images/*/*.jpg'
     )
 
     parser.add_argument(
@@ -472,8 +460,8 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--line-thickness', 
-        default=2, type=int, 
-        help='bounding box thickness (pixels)'
+        type=int, default=2, 
+        help='bounding box thickness in pixels'
     )
 
     parser.add_argument(
@@ -485,13 +473,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--hide-conf', 
         action='store_true', 
-        help='hide detection confidences in bounding boxes label'
+        help='hide detection confidence in bounding box label'
     )
 
     parser.add_argument(
         '--hide-class', 
         action='store_true', 
-        help='hide class id in bounding boxes label'
+        help='hide class id in bounding box label'
     )
 
     parser.add_argument(
@@ -520,42 +508,42 @@ if __name__ == '__main__':
     parser.add_argument(
         '--matching-cascade',
         action='store_true',
-        help='apply DeepSORT matching cascade per tracker age'
+        help='apply DeepSORT matching cascade'
     )
     
     parser.add_argument(
-        '--appearance-lambda', # Old strong_sort.yaml STRONGSORT.MC_LAMBDA
+        '--appearance-lambda',  # Old strong_sort.yaml STRONGSORT.MC_LAMBDA
         type=float, default=0.995,
         help='appearance cost weight for appearance-motion cost matrix calculation'
     )
     
     parser.add_argument(
-        '--iou-gate', # Old strong_sort.yaml STRONGSORT.MAX_IOU_DISTANCE
+        '--iou-gate',  # Old strong_sort.yaml STRONGSORT.MAX_IOU_DISTANCE
         type=float, default=0.7,
         help='IoU distance gate for the final IoU matching'
     )
 
     parser.add_argument(
-        '--ecc', # Old strong_sort.yaml STRONGSORT.ECC
+        '--ecc',  # Old strong_sort.yaml STRONGSORT.ECC
         action='store_true',
         help='apply camera motion compensation using ECC'
     )
     
     ### TODO: choose between feature update or feature bank
     parser.add_argument(
-        '--feature-bank-size', # Old strong_sort.yaml STRONGSORT.NN_BUDGET
+        '--feature-bank-size',  # Old strong_sort.yaml STRONGSORT.NN_BUDGET
         type=int, default=100,
         help='num of features to store per Track for appearance distance calculation'
     )
 
     parser.add_argument(
-        '--init-period', # Old strong_sort.yaml STRONGSORT.N_INIT
+        '--init-period',  # Old strong_sort.yaml STRONGSORT.N_INIT
         type=int, default=3,
         help='size of Track initialization period in frames'
     )
     
     parser.add_argument(
-        '--max-age', # Old strong_sort.yaml STRONGSORT.MAX_AGE
+        '--max-age',  # Old strong_sort.yaml STRONGSORT.MAX_AGE
         type=int, default=10,
         help='max period which a Track survive without assignments in frames'
     )
@@ -565,18 +553,34 @@ if __name__ == '__main__':
     ### StrongSORT implementation don't use the feature bank but the feature
     ### stored inside Track object and updated using the momentum term
     parser.add_argument(
-        '--feature-momentum', # Old strong_sort.yaml STRONGSORT.EMA_ALPHA
+        '--feature-momentum',  # Old strong_sort.yaml STRONGSORT.EMA_ALPHA
         type=float, default=0.9,
         help='momentum term for Track.feature update'
     )
     
     parser.add_argument(
-        '--final-gate', # Old strong_sort.yaml STRONGSORT.MAX_DIST
+        '--appearance-gate',  # Old strong_sort.yaml STRONGSORT.MAX_DIST
         type=float, default=0.2,
-        help='final track-detection association gate: associations with cost greater than --cost_thres are disregarded'
+        help='track-detection associations with appearance cost greater than this value are disregarded'
     )
 
+    parser.add_argument(
+        '--motion-only-position',
+        action='store_true', 
+        help='use only centroid position to compute motion cost'
+    )
 
+    parser.add_argument(
+        '--motion-gate-coefficient',
+        type=float, default=1.0,
+        help='coefficient that multiplies the motion gate to control track-detection associations'
+    )
+
+    parser.add_argument(
+        '--max-centroid-distance',
+        type=int, default=None,
+        help='max distance in pixels between track and detection centroids for track-detection match'
+    )
 
     opt = parser.parse_args()
     print(opt)
