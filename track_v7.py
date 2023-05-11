@@ -77,6 +77,10 @@ def detect(opt):
         increment_path(Path(opt.project).absolute() / opt.name, exist_ok=opt.exist_ok))  # increment path
     (save_dir / 'labels' if opt.save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make labels dir
 
+    if opt.save_txt:
+        save_txt_fmt = ' '.join(['%d'] * 7 + (['%.2f'] if opt.save_conf else []))
+        save_txt_cols = list(range(8 if opt.save_conf else 7))
+
     save_argparser_arguments(opt, str(save_dir / 'arguments.txt'), opt.exist_ok)
 
     # Initialize
@@ -211,9 +215,16 @@ def detect(opt):
             dt[3] += t5 - t4
             
             if sort_output.any():
+                sort_output = np.c_[np.repeat([[frame_id]], sort_output.shape[0], axis=0), sort_output]
+                if opt.save_txt:
+                    # frame_id, track_id, clas_id, tlwh bbox, detection conf
+                    with open(txt_path, mode='a') as f:
+                        np.savetxt(f, sort_output[:, save_txt_cols], fmt=save_txt_fmt)
+                
                 for output in sort_output:
-                    tlwh = output[:4]
-                    track_id, cls, conf = int(output[4]), int(output[5]), output[6]
+                    track_id, cls = output[[1, 2]].astype(np.int32) 
+                    tlwh = output[3:7]
+                    conf = output[7]
                     if opt.draw_trajectory:
                         center = tuple((tlwh[:2] + tlwh[2:] / 2).round().astype(np.int32).tolist())
                         track_trajs = trajectorys.setdefault(track_id, [])
@@ -225,15 +236,8 @@ def detect(opt):
                                 break
                             cv2.line(im0, c0, c1, colors[cls], 3)
 
-                    if opt.save_txt:
-                        # frame_id, track_id, clas_id, tlwh bbox, detection conf
-                        result_line = ' '.join(output[:7].astype(np.int32).astype(np.str_))
-                        result_line += f' {output[-1]:.2f}\n' if opt.save_conf else '\n' 
-                        with open(txt_path, 'a') as f:
-                            f.write(result_line)
-
                     if opt.save_vid:  # Add bbox to image
-                        xyxy = output[:4]
+                        xyxy = tlwh.astype(np.int32)
                         xyxy[2:] = xyxy[:2] + xyxy[2:]
                         label = None if opt.hide_labels else (str(track_id) if opt.hide_conf and opt.hide_class else \
                                                               f'{track_id} {names[cls]}' if opt.hide_conf else \
