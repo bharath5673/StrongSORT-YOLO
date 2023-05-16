@@ -39,7 +39,7 @@ from yolov7.models.experimental import attempt_load
 from yolov7.utils.plots import get_rgb_colors
 from yolov7.utils.datasets import LoadImages
 from yolov7.utils.general import (check_img_size, check_requirements, check_imshow, 
-                                  non_max_suppression, apply_classifier, scale_coords, 
+                                  yolov5_non_max_suppression, apply_classifier, scale_coords, 
                                   xyxy2xywh, strip_optimizer, set_logging, increment_path,
                                   save_argparser_arguments)
 from yolov7.utils.plots import plot_one_box
@@ -176,7 +176,8 @@ def detect(opt):
         t3 = time_synchronized()
         dt[1] += t3 - t2
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        pred = yolov5_non_max_suppression(
+            pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         dt[2] += time_synchronized() - t3
 
         # # Apply Classifier
