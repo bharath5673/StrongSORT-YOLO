@@ -34,7 +34,8 @@ class StrongSORT(object):
             matching_cascade = False,
             only_position = False,            
             motion_gate_coefficient = 1.0, 
-            max_centroid_distance = None
+            max_centroid_distance = None, 
+            max_velocity = None
         ):
         if not osp.isfile(EXTRACTOR_PATH):
             print(f'Feature extractor not found in {EXTRACTOR_PATH}')
@@ -58,7 +59,7 @@ class StrongSORT(object):
         self.tracker = Tracker(
             appearance_metric, max_appearance_distance, max_iou_distance, max_age, n_init, 
             ema_alpha, mc_lambda, matching_cascade, only_position, motion_gate_coefficient, 
-            max_centroid_distance)
+            max_centroid_distance, max_velocity)
 
     def update(self, bboxes_xyxy, confidences, classes, im0):
         features = self.get_features(bboxes_xyxy, im0)

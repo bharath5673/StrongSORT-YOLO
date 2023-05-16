@@ -45,14 +45,16 @@ class Tracker:
             mc_lambda = 0.995, 
             matching_cascade = False, 
             only_position = False, 
-            motion_gate_coefficient = 1.0,
-            max_centroid_distance = None
+            motion_gate_coefficient = 1.0, 
+            max_centroid_distance = None, 
+            max_velocity = None
         ):
         self.appearance_metric = appearance_metric
         self.max_appearance_distance = max_appearance_distance
         self.max_motion_distance = kalman_filter.chi2inv95[2 if only_position else 4] * motion_gate_coefficient
         self.max_iou_distance = max_iou_distance
         self.max_centroid_distance = max_centroid_distance
+        self.max_velocity = max_velocity
         self.max_age = max_age
         self.n_init = n_init
         self.ema_alpha = ema_alpha
@@ -60,16 +62,44 @@ class Tracker:
         self.matching_cascade = matching_cascade
         self.only_position = only_position
 
+        self.jump_gater = self.get_association_jump_gater()
         self.tracks = []
         self._next_id = 1
 
-    def centroid_gate(self, tracks, detections, track_indices, detection_indices):
+    def get_association_jump_gater(self):
+        if self.max_centroid_distance and self.max_velocity:
+            def gating(tracks, detections, track_indices, detection_indices):
+                centroid_cost = self.__centroid_distance_cost(
+                    tracks, detections, track_indices, detection_indices)
+                distance_gate = centroid_cost > self.max_centroid_distance
+                for i, track_idx in enumerate(track_indices):
+                    centroid_cost[i] = centroid_cost[i] / tracks[track_idx].time_since_update
+                velocity_gate = centroid_cost > self.max_velocity
+                return np.logical_or(distance_gate, velocity_gate)
+        elif self.max_centroid_distance:
+            def gating(tracks, detections, track_indices, detection_indices):
+                centroid_cost = self.__centroid_distance_cost(
+                    tracks, detections, track_indices, detection_indices)
+                return centroid_cost > self.max_centroid_distance
+        elif self.max_velocity:
+            def gating(tracks, detections, track_indices, detection_indices):
+                velocity_cost = self.__centroid_distance_cost(
+                    tracks, detections, track_indices, detection_indices)
+                for i, track_idx in enumerate(track_indices):
+                    velocity_cost[i] = velocity_cost[i] / tracks[track_idx].time_since_update
+                return velocity_cost > self.max_velocity
+        else:
+            def gating(*args, **kwargs):
+                return False
+        return gating
+
+    def __centroid_distance_cost(self, tracks, detections, track_indices, detection_indices):
         tks_centroids = np.array(
             [tracks[i].last_associated_bbox()[:2] for i in track_indices], dtype=np.int32)
         dts_centroids = np.array(
             [detections[i].to_xyah()[:2] for i in detection_indices], dtype=np.int32)
         return np.array(
-            [np.linalg.norm(dts_centroids - c, axis=1) > self.max_centroid_distance for c in tks_centroids])
+            [np.linalg.norm(dts_centroids - c, axis=1) for c in tks_centroids], dtype=np.float32)
 
     def gated_iou_metric(self, *args, **kwargs):
         cost_matrix = iou_matching.iou_cost(*args, **kwargs)
@@ -140,12 +170,9 @@ class Tracker:
             motion_cost_matrix[row] = track.kf.gating_distance(
                 track.mean, track.covariance, measurements, self.only_position)
         # Gate
-        gate = np.logical_or(
-            appearance_cost_matrix > self.max_appearance_distance,
-            motion_cost_matrix > self.max_motion_distance)
-        if self.max_centroid_distance is not None:
-            gate[:] = np.logical_or(
-                gate, self.centroid_gate(tracks, detections, track_indices, detection_indices))
+        gate = appearance_cost_matrix > self.max_appearance_distance
+        gate[:] = np.logical_or(gate, motion_cost_matrix > self.max_motion_distance)
+        gate[:] = np.logical_or(gate, self.jump_gater(tracks, detections, track_indices, detection_indices))
         # Final cost matrix
         lmb = self.mc_lambda
         appearance_cost_matrix[:] = lmb * appearance_cost_matrix + (1 - lmb) * motion_cost_matrix

@@ -63,13 +63,13 @@ def _build_strong_sort(opt):
         matching_cascade=opt.matching_cascade,
         only_position=opt.motion_only_position,
         motion_gate_coefficient=opt.motion_gate_coefficient,
-        max_centroid_distance=opt.max_centroid_distance
+        max_centroid_distance=opt.max_centroid_distance, 
+        max_velocity=opt.max_velocity
     )
 
 
 def detect(opt):
     assert os.path.isdir(opt.source) or os.path.isfile(opt.source), 'Source must be a video file or a directory'
-    # strong_sort_weights = opt.strong_sort_weights  # re-id model.pt path
     # view_img = check_imshow()  # Cannot run in Colab
 
     # Directories
@@ -585,6 +585,12 @@ if __name__ == '__main__':
         '--max-centroid-distance',
         type=int, default=None,
         help='max distance in pixels between track and detection centroids for track-detection match'
+    )
+
+    parser.add_argument(
+        '--max-velocity',
+        type=float, default=None,
+        help='max velocity in px/frame between track and detection centroids for track-detection match'
     )
 
     opt = parser.parse_args()
