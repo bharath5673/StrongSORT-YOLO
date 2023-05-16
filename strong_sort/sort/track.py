@@ -84,7 +84,7 @@ class Track:
         self.ema_alpha = ema_alpha
 
         self.state = TrackState.Tentative
-        self.features = [detection.feature / np.linalg.norm(detection.feature)]
+        self.feature = detection.feature / np.linalg.norm(detection.feature)
 
         self.conf = conf
         self._n_init = n_init
@@ -289,11 +289,10 @@ class Track:
         self.last_association = detection
         self.mean, self.covariance = self.kf.update(self.mean, self.covariance, detection.to_xyah(), detection.confidence)
 
-        feature = detection.feature / np.linalg.norm(detection.feature)
+        new_feature = detection.feature / np.linalg.norm(detection.feature)
 
-        smooth_feat = self.ema_alpha * self.features[-1] + (1 - self.ema_alpha) * feature
-        smooth_feat /= np.linalg.norm(smooth_feat)
-        self.features = [smooth_feat]
+        self.feature[:] = self.ema_alpha * self.feature + (1 - self.ema_alpha) * new_feature
+        self.feature[:] = self.feature / np.linalg.norm(self.feature)
 
         self.hits += 1
         self.time_since_update = 0

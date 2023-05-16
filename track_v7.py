@@ -458,11 +458,6 @@ if __name__ == '__main__':
     #     help='display results while processing (not supported for now)'
     # )
 
-    # parser.add_argument(
-    #     '--count', action='store_true', 
-    #     help='display all MOT counts results on screen (not supported for now)'
-    # )
-
     parser.add_argument(
         '--line-thickness', 
         type=int, default=2, 
@@ -537,7 +532,7 @@ if __name__ == '__main__':
     ### TODO: choose between feature update or feature bank
     parser.add_argument(
         '--feature-bank-size',  # Old strong_sort.yaml STRONGSORT.NN_BUDGET
-        type=int, default=100,
+        type=int, default=1,
         help='num of features to store per Track for appearance distance calculation'
     )
 
@@ -552,15 +547,11 @@ if __name__ == '__main__':
         type=int, default=10,
         help='max period which a Track survive without assignments in frames'
     )
-
-    ### Irrelevant at the moment since the appearance cost matrix in calculated
-    ### using the NearestNeighborDistanceMetric feature bank. The original
-    ### StrongSORT implementation don't use the feature bank but the feature
-    ### stored inside Track object and updated using the momentum term
+    
     parser.add_argument(
         '--feature-momentum',  # Old strong_sort.yaml STRONGSORT.EMA_ALPHA
         type=float, default=0.9,
-        help='momentum term for Track.feature update'
+        help='momentum term for feature vector update'
     )
     
     parser.add_argument(

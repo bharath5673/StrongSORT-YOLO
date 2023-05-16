@@ -148,14 +148,16 @@ class Tracker:
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
         # Update distance metric.
-        active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
-        features, targets = [], []
+        updated_targets = []
+        updated_features = []
+        active_tracks = []
         for track in self.tracks:
-            if not track.is_confirmed():
-                continue
-            features += track.features
-            targets += [track.track_id for _ in track.features]
-        self.appearance_metric.partial_fit(np.asarray(features), np.asarray(targets), active_targets)
+            active_tracks.append(track.track_id)
+            if not track.time_since_update:
+                updated_targets.append(track.track_id)
+                updated_features.append(track.feature)
+        self.appearance_metric.partial_fit(
+            np.asarray(updated_features), updated_targets, active_tracks)
 
     def gated_metric(self, tracks, detections, track_indices, detection_indices):
         features = np.array([detections[i].feature for i in detection_indices])
@@ -182,7 +184,7 @@ class Tracker:
     def _match(self, detections):        
         # Split track set into confirmed and unconfirmed tracks.
         confirmed_tracks = [i for i, t in enumerate(self.tracks) if t.is_confirmed()]
-        unconfirmed_tracks = [i for i, t in enumerate(self.tracks) if not t.is_confirmed()]
+        unconfirmed_tracks = [i for i, t in enumerate(self.tracks) if t.is_tentative()]
 
         # Associate confirmed tracks using appearance and motion cost.
         matches_a, unmatched_tracks_a, unmatched_detections = linear_assignment.matching_cascade(
