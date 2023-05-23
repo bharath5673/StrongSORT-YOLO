@@ -78,12 +78,12 @@ class Track:
         ):
         self.track_id = track_id
         self.class_id = int(class_id)
-        self.hits = 1
+        self.hits = 0  # initialization isn't considered a hit
         self.age = 1
         self.time_since_update = 0
         self.ema_alpha = ema_alpha
 
-        self.state = TrackState.Tentative
+        self.state = TrackState.Tentative if n_init > 0 else TrackState.Confirmed
         self.feature = detection.feature / np.linalg.norm(detection.feature)
 
         self.conf = conf
@@ -102,7 +102,6 @@ class Track:
         -------
         ndarray
             The bounding box.
-
         """
         ret = self.mean[:4].copy()
         ret[2] *= ret[3]
@@ -117,7 +116,6 @@ class Track:
         -------
         ndarray
             The predicted kf bounding box.
-
         """
         ret = self.to_tlwh()
         ret[2:] = ret[:2] + ret[2:]
@@ -165,7 +163,6 @@ class Track:
         src_aligned: ndarray
             aligned source image of gray
         """
-
         # skip if current and previous frame are not initialized (1st inference)
         if (src.any() or dst.any() is None):
             return None, None
@@ -270,7 +267,6 @@ class Track:
         ----------
         kf : kalman_filter.KalmanFilter
             The Kalman filter.
-
         """
         self.mean, self.covariance = self.kf.predict(self.mean, self.covariance)
         self.age += 1
@@ -300,16 +296,14 @@ class Track:
             self.state = TrackState.Confirmed
 
     def mark_missed(self):
-        """Mark this track as missed (no association at the current time step).
-        """
+        """Mark this track as missed (no association at the current time step)."""
         if self.state == TrackState.Tentative:
             self.state = TrackState.Deleted
         elif self.time_since_update > self._max_age:
             self.state = TrackState.Deleted
 
     def is_tentative(self):
-        """Returns True if this track is tentative (unconfirmed).
-        """
+        """Returns True if this track is tentative (unconfirmed)."""
         return self.state == TrackState.Tentative
 
     def is_confirmed(self):
