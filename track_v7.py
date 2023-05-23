@@ -1,4 +1,5 @@
 import os
+import os.path as osp
 import sys
 import argparse
 
@@ -33,7 +34,7 @@ if str(ROOT / 'yolov7') not in sys.path:
     sys.path.append(str(ROOT / 'yolov7'))  # add yolov7 ROOT to PATH
 if str(ROOT / 'strong_sort') not in sys.path:
     sys.path.append(str(ROOT / 'strong_sort'))  # add strong_sort ROOT to PATH
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+ROOT = Path(osp.relpath(ROOT, Path.cwd()))  # relative
 
 from yolov7.models.experimental import attempt_load
 from yolov7.utils.plots import get_rgb_colors
@@ -64,18 +65,16 @@ def _build_strong_sort(opt):
         only_position=opt.motion_only_position,
         motion_gate_coefficient=opt.motion_gate_coefficient,
         max_centroid_distance=opt.max_centroid_distance, 
-        max_velocity=opt.max_velocity
-    )
+        max_velocity=opt.max_velocity)
 
 
 def detect(opt):
-    assert os.path.isdir(opt.source) or os.path.isfile(opt.source), 'Source must be a video file or a directory'
+    assert osp.isdir(opt.source) or osp.isfile(opt.source), 'Source must be a video file or a directory'
     # view_img = check_imshow()  # Cannot run in Colab
 
     # Directories
-    save_dir = Path(
-        increment_path(Path(opt.project).absolute() / opt.name, exist_ok=opt.exist_ok))  # increment path
-    (save_dir / 'labels' if opt.save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make labels dir
+    save_dir = Path(increment_path(Path(opt.project).absolute() / opt.name, exist_ok=opt.exist_ok))
+    (save_dir / 'labels' if opt.save_txt else save_dir).mkdir(parents=True, exist_ok=True)
 
     if opt.save_txt:
         save_txt_fmt = ' '.join(['%d'] * 7 + (['%.2f'] if opt.save_conf else []))
@@ -130,9 +129,9 @@ def detect(opt):
     strong_sort, actual_path, vid_writer, curr_frames, prev_frames, txt_path = [None] * 6
     for path, img, im0, vid_cap in dataset:
         curr_frames = im0
-        path_base_name = os.path.splitext(os.path.basename(path))[0]
+        path_base_name = osp.splitext(osp.basename(path))[0]
         
-        if actual_path != path:
+        if path != actual_path:
             if dataset.mode == 'video':
                 if not opt.video_sequence or strong_sort is None:
                     strong_sort = _build_strong_sort(opt)
@@ -146,12 +145,12 @@ def detect(opt):
                         vid_writer.release()
                     except AttributeError:
                         pass
+                    video_path = str(save_dir / f'{path_base_name}.mp4')
                     fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                    w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    fourcc = int(vid_cap.get(cv2.CAP_PROP_FOURCC))
-                    vid_writer = cv2.VideoWriter(
-                        str(save_dir / os.path.basename(path)), fourcc, fps, (w, h))
+                    resolution = (int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 
+                                  int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    vid_writer = cv2.VideoWriter(video_path, fourcc, fps, resolution)
             else:
                 if strong_sort is None:
                     strong_sort = _build_strong_sort(opt)
