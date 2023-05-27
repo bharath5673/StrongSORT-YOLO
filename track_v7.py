@@ -50,6 +50,17 @@ from yolov7.utils.torch_utils import select_device, load_classifier, time_synchr
 from strong_sort.strong_sort import StrongSORT
 
 
+def get_detection_filter(rect_pt1, rect_pt2):
+    assert rect_pt1 != rect_pt2, 'rect_pt1 and rect_pt2 must be different'
+    xs = tuple(sorted([rect_pt1[0], rect_pt2[0]]))
+    ys = tuple(sorted([rect_pt1[1], rect_pt2[1]]))
+    def detection_filter(detections):
+        centroids = ((detections[:, :2] + detections[:, 2:4]) / 2).round().type(torch.int32)
+        x_inside = torch.logical_and(centroids[:, 0].ge(xs[0]), centroids[:, 0].le(xs[1]))
+        y_inside = torch.logical_and(centroids[:, 1].ge(ys[0]), centroids[:, 1].le(ys[1]))
+        return detections[torch.logical_and(x_inside, y_inside)]
+    return detection_filter
+
 
 def _build_strong_sort(opt):
     return StrongSORT(
@@ -97,6 +108,13 @@ def detect(opt):
 
     if half:
         model.half()  # to FP16
+    
+    if opt.filter_detections:
+        pt1 = tuple(opt.filter_detections[:2])
+        pt2 = tuple(opt.filter_detections[2:])
+        detection_filter = get_detection_filter(pt1, pt2)
+    else:
+        detection_filter = lambda x: x
 
     # # Second-stage classifier
     # classify = False
@@ -199,6 +217,8 @@ def detect(opt):
         if detections.any():
             # Rescale boxes from img_size to im0 size
             detections[:, :4] = scale_coords(img.shape[2:], detections[:, :4], im0.shape).round()
+
+            detections = detection_filter(detections)
 
             xyxys = detections[:, :4].type(torch.int32)
             confs = detections[:, 4]
@@ -321,26 +341,25 @@ def detect(opt):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
     
     ### YOLO
-
     parser.add_argument(
         '--yolo-weights', 
         nargs='+', type=str, default='weights/yolov7-tiny.pt', 
-        help='path to yolo model file'
+        help='Path to yolo model file'
     )
 
     parser.add_argument(
         '--img-size', 
         type=int, default=640, 
-        help='inference size (pixels) of yolo detector'
+        help='Inference size (pixels) of yolo detector'
     )
 
     parser.add_argument(
         '--conf-thres', 
         type=float, default=0.5, 
-        help='object detection confidence threshold'
+        help='Object detection confidence threshold'
     )
     
     parser.add_argument(
@@ -352,235 +371,235 @@ if __name__ == '__main__':
     parser.add_argument(
         '--classes', 
         nargs='+', type=int, 
-        help='filter detections by class index, e.g.: --class 0 2 3'
+        help='Filter detections by class index, e.g.: --class 0 2 3'
     )
 
     parser.add_argument(
         '--agnostic-nms', 
         action='store_true', 
-        help='class-agnostic NMS'
+        help='Class-agnostic NMS'
     )
 
     parser.add_argument(
         '--augment', 
         action='store_true', 
-        help='augmented inference'
+        help='Augmented inference'
     )
 
     parser.add_argument(
         '--update', 
         action='store_true', 
-        help='update all models'
+        help='Update all models'
     )
 
     parser.add_argument(
         '--trace', 
         action='store_true', 
-        help='trace model'
+        help='Trace model'
+    )
+
+    parser.add_argument(
+        '--filter-detections', type=int, nargs=4, default=None, 
+        help='Select only the detections with centroid inside a rectangle defined using "--filter-detections x1 y1 x2 y2"'
     )
 
     ### General
-
     parser.add_argument(
         '--source', 
         type=str, default='.', 
-        help='source data (video file or directory with images or/and videos) for tracking'
+        help='Source data (video file or directory with images or/and videos) for tracking'
     )
 
     parser.add_argument(
         '--video-sequence', 
         action='store_true', 
-        help='keep tracker alive (do not reinstantiate) between videos'
+        help='Keep tracker alive (do not reinstantiate) between videos'
     )
 
     parser.add_argument(
         '--device', 
         default='cpu', 
-        help='cuda device, i.e. 0 or 0,1,2,3 or cpu'
+        help='CUDA device, i.e. 0 or 0,1,2,3 or cpu'
     )
 
     parser.add_argument(
         '--verbose', 
         action='store_true', 
-        help='report tracking informations'
+        help='Report tracking informations'
     )
 
     ### Saving results
-
     parser.add_argument(
         '--project', 
         default='runs/track', 
-        help='save results to /project/name'
+        help='Save results to /project/name'
     )
 
     parser.add_argument(
         '--name', 
         default='exp', 
-        help='save results to /project/name'
+        help='Save results to /project/name'
     )
 
     parser.add_argument(
         '--exist-ok', 
         action='store_true', 
-        help='existing /project/name ok, do not increment dir path'
+        help='Existing /project/name ok, do not increment dir path'
     )
 
     parser.add_argument(
         '--save-txt', 
         action='store_true', 
-        help='save tracking results to /project/name/labels/*.txt'
+        help='Save tracking results to /project/name/labels/*.txt'
     )
 
     parser.add_argument(
         '--save-img', 
         action='store_true', 
-        help='save processed images/frames to /project/name/images/*/*.jpg'
+        help='Save processed images/frames to /project/name/images/*/*.jpg'
     )
 
     parser.add_argument(
         '--save-conf', 
         action='store_true', 
-        help='save detection confidences in --save-txt results'
+        help='Save detection confidences in --save-txt results'
     )
 
     parser.add_argument(
         '--save-vid', 
         action='store_true', 
-        help='save videos with the tracking results'
+        help='Save videos with the tracking results'
     )
 
     ### Visualization
-
     # parser.add_argument(
     #     '--show-vid', 
     #     action='store_true', 
-    #     help='display results while processing (not supported for now)'
+    #     help='Display results while processing'
     # )
 
     parser.add_argument(
         '--line-thickness', 
         type=int, default=2, 
-        help='bounding box thickness in pixels'
+        help='Bounding box thickness in pixels'
     )
 
     parser.add_argument(
         '--hide-labels', 
         action='store_true', 
-        help='only draw bounding box rectangle'
+        help='Only draw bounding box rectangle'
     )
 
     parser.add_argument(
         '--hide-conf', 
         action='store_true', 
-        help='hide detection confidence in bounding box label'
+        help='Hide detection confidence in bounding box label'
     )
 
     parser.add_argument(
         '--hide-class', 
         action='store_true', 
-        help='hide class id in bounding box label'
+        help='Hide class id in bounding box label'
     )
 
     parser.add_argument(
         '--draw-trajectory', 
         action='store_true', 
-        help='display object trajectory lines'
+        help='Display object trajectory lines'
     )
 
     ### StrongSORT
-
-    ### Now need to change the model in the source code
-    ### See https://github.com/KaiyangZhou/deep-person-reid for more models
+    # Now need to change the model in the source code
+    # See https://github.com/KaiyangZhou/deep-person-reid for more models
     # parser.add_argument(
     #     '--strong-sort-weights', 
     #     type=str, default=(WEIGHTS / 'osnet_x0_25_msmt17.pt'),
-    #     help='path to feature extractor model file for peron/object reid'
+    #     help='Path to feature extractor model file for peron/object reid'
     # )
 
-    ### Now need to supply configurations as arguments to parser
+    # Now need to supply StrongSORT configurations as CLI arguments
     # parser.add_argument(
     #     '--config-strongsort', 
     #     type=str, default='strong_sort/configs/strong_sort.yaml', 
-    #     help='path to yaml file for StrongSORT() instantiation/configuration'
+    #     help='Path to yaml file for StrongSORT() instantiation/configuration'
     # )
 
     parser.add_argument(
         '--matching-cascade',
         action='store_true',
-        help='apply DeepSORT matching cascade'
+        help='Apply DeepSORT matching cascade'
     )
     
     parser.add_argument(
-        '--appearance-lambda',  # Old strong_sort.yaml STRONGSORT.MC_LAMBDA
+        '--appearance-lambda',
         type=float, default=0.995,
-        help='appearance cost weight for appearance-motion cost matrix calculation'
+        help='Appearance cost weight for appearance-motion cost matrix calculation'
     )
     
     parser.add_argument(
-        '--iou-gate',  # Old strong_sort.yaml STRONGSORT.MAX_IOU_DISTANCE
+        '--iou-gate',
         type=float, default=0.7,
         help='IoU distance gate for the final IoU matching'
     )
 
     parser.add_argument(
-        '--ecc',  # Old strong_sort.yaml STRONGSORT.ECC
+        '--ecc',
         action='store_true',
-        help='apply camera motion compensation using ECC'
+        help='Apply camera motion compensation using ECC'
     )
     
-    ### TODO: choose between feature update or feature bank
     parser.add_argument(
-        '--feature-bank-size',  # Old strong_sort.yaml STRONGSORT.NN_BUDGET
+        '--feature-bank-size',
         type=int, default=1,
-        help='num of features to store per Track for appearance distance calculation'
+        help='Num of features to store per Track for appearance distance calculation'
     )
 
     parser.add_argument(
-        '--init-period',  # Old strong_sort.yaml STRONGSORT.N_INIT
+        '--init-period',
         type=int, default=3,
-        help='size of Track initialization period in frames'
+        help='Size of Track initialization period in frames'
     )
     
     parser.add_argument(
-        '--max-age',  # Old strong_sort.yaml STRONGSORT.MAX_AGE
+        '--max-age',
         type=int, default=10,
-        help='max period which a Track survive without assignments in frames'
+        help='Max period which a Track survive without assignments in frames'
     )
     
     parser.add_argument(
-        '--feature-momentum',  # Old strong_sort.yaml STRONGSORT.EMA_ALPHA
+        '--feature-momentum',
         type=float, default=0.9,
-        help='momentum term for feature vector update'
+        help='Momentum term for feature vector update'
     )
     
     parser.add_argument(
-        '--appearance-gate',  # Old strong_sort.yaml STRONGSORT.MAX_DIST
+        '--appearance-gate',
         type=float, default=0.2,
-        help='track-detection associations with appearance cost greater than this value are disregarded'
+        help='Track-detection associations with appearance cost greater than this value are disregarded'
     )
 
     parser.add_argument(
         '--motion-only-position',
         action='store_true', 
-        help='use only centroid position to compute motion cost'
+        help='Use only centroid position to compute motion cost'
     )
 
     parser.add_argument(
         '--motion-gate-coefficient',
         type=float, default=1.0,
-        help='coefficient that multiplies the motion gate to control track-detection associations'
+        help='Coefficient that multiplies the motion gate to control track-detection associations'
     )
 
     parser.add_argument(
         '--max-centroid-distance',
         type=int, default=None,
-        help='max distance in pixels between track and detection centroids for track-detection match'
+        help='Max distance in pixels between track and detection centroids for track-detection match'
     )
 
     parser.add_argument(
         '--max-velocity',
         type=float, default=None,
-        help='max velocity in px/frame between track and detection centroids for track-detection match'
+        help='Max velocity in px/frame between track and detection centroids for track-detection match'
     )
 
     opt = parser.parse_args()
