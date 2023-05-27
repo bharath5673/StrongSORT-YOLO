@@ -7,6 +7,10 @@ from . import iou_matching
 from .track import Track
 
 
+def default_track_killer(track: Track) -> bool:
+    return False  # do not kill any
+
+
 class Tracker:
     """
     This is the multi-target tracker.
@@ -47,7 +51,8 @@ class Tracker:
             only_position = False, 
             motion_gate_coefficient = 1.0, 
             max_centroid_distance = None, 
-            max_velocity = None
+            max_velocity = None,
+            track_killer = None
         ):
         self.appearance_metric = appearance_metric
         self.max_appearance_distance = max_appearance_distance
@@ -64,6 +69,7 @@ class Tracker:
 
         self.jump_gater = self.get_association_jump_gater()
         self.tracks = []
+        self.track_killer = track_killer if track_killer else default_track_killer
         self._next_id = 1
 
     def get_association_jump_gater(self):
@@ -124,27 +130,24 @@ class Tracker:
         for track in self.tracks:
             track.camera_update(previous_img, current_img)
 
-    def update(self, detections, classes, confidences):
+    def update(self, detections):
         """Perform measurement update and track management.
 
         Parameters
         ----------
         detections : List[deep_sort.detection.Detection]
             A list of detections at the current time step.
-
         """
         # Run matching cascade.
         matches, unmatched_tracks, unmatched_detections = self._match(detections)
 
         # Update track set.
         for track_idx, detection_idx in matches:
-            self.tracks[track_idx].update(
-                detections[detection_idx], classes[detection_idx], confidences[detection_idx])
+            self.tracks[track_idx].update(detections[detection_idx])
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
         for detection_idx in unmatched_detections:
-            self._initiate_track(
-                detections[detection_idx], classes[detection_idx].item(), confidences[detection_idx].item())
+            self._initiate_track(detections[detection_idx])
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
         # Update distance metric.
@@ -207,11 +210,9 @@ class Tracker:
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
         return matches, unmatched_tracks, unmatched_detections
 
-    def _initiate_track(self, detection, class_id, conf):
-        self.tracks.append(
-            Track(
-                detection, self._next_id, class_id, conf, 
-                self.n_init, self.max_age, self.ema_alpha
-            )
-        )
-        self._next_id += 1
+    def _initiate_track(self, detection):
+        track = Track(self._next_id, self.n_init, self.max_age, 
+                      self.ema_alpha, self.track_killer)
+        if track.initialize(detection):
+            self._next_id += 1
+            self.tracks.append(track)

@@ -62,6 +62,50 @@ def get_detection_filter(rect_pt1, rect_pt2):
     return detection_filter
 
 
+def get_line_function(pt1, pt2):
+    """
+    Returns a function that approximates the equation 
+    of the line that passes throught points pt1 and pt2.
+    """
+    coefs = np.linalg.inv([[pt1[0], 1], [pt2[0], 1]]) @ [[pt1[1]], [pt2[1]]]
+    def line(x):
+        return x * coefs[0, 0].item() + coefs[1, 0].item()
+    return line
+
+def get_line_reference_checker(pt1, pt2, higher):
+    """
+    Returns a function to tell if a (x, y) point is above or below a straight line defined by points 
+    `pt1` and `pt2`. If `higher` is True, checks if the point is above the line, if False checks if it 
+    is below or intercepting. If `pt1` and `pt2` both have the same x coordinate (is a vertical line), 
+    `higher` equal True tells if the point is to the right of the line. `pt1` and `pt2` cannot be the same point.
+    """
+    assert tuple(pt1) != tuple(pt2), 'pt1 and pt2 must be different'
+    if pt1[0] == pt2[0]:
+        def checker(point):
+            return not (higher ^ (point[0] > pt1[0]))
+    elif pt1[1] == pt2[1]:
+        def checker(point):
+            return not (higher ^ (point[1] > pt1[1]))
+    else:
+        line_func = get_line_function(pt1, pt2)
+        def checker(point):
+            y = line_func(point[0])
+            return not (higher ^ (point[1] > y))
+    return checker
+
+def get_track_killer(line_killers):
+    if line_killers:
+        checkers = [get_line_reference_checker((x1, y1), (x2, y2), bool(higher)) \
+                    for x1, y1, x2, y2, higher in line_killers]
+        def track_killer(track):
+            centroid = track.last_association.to_xyah()[:2].tolist()
+            checks = np.array([checker(centroid) for checker in checkers], dtype=np.bool_)
+            return checks.any()
+        return track_killer
+    else:
+        return None
+
+
 def _build_strong_sort(opt):
     return StrongSORT(
         device=select_device(opt.device), 
@@ -76,7 +120,8 @@ def _build_strong_sort(opt):
         only_position=opt.motion_only_position,
         motion_gate_coefficient=opt.motion_gate_coefficient,
         max_centroid_distance=opt.max_centroid_distance, 
-        max_velocity=opt.max_velocity)
+        max_velocity=opt.max_velocity,
+        track_killer=get_track_killer(opt.line_track_kill))
 
 
 def detect(opt):
@@ -600,6 +645,15 @@ if __name__ == '__main__':
         '--max-velocity',
         type=float, default=None,
         help='Max velocity in px/frame between track and detection centroids for track-detection match'
+    )
+
+    parser.add_argument(
+        '--line-track-kill',
+        type=int, default=None, nargs=5, action='append',
+        help=' '.join(['Kill a track based on its position in regard to a line.\n',
+                       'Eg.: "--line-track-kill 10 10 90 90 1" will kill a track when it is above a line determined by points\n',
+                       '     (10, 10) and (90, 90). Supply 0 instead of 1 at the end to kill when its below or intercepting the line.\n',
+                       '     If the points have the same x coordinate, 1 at the end kills tracks at the right of the line.'])
     )
 
     opt = parser.parse_args()

@@ -66,33 +66,29 @@ class Track:
 
     """
 
-    def __init__(
-            self, 
-            detection, 
-            track_id, 
-            class_id, 
-            conf, 
-            n_init, 
-            max_age, 
-            ema_alpha
-        ):
+    def __init__(self, track_id, n_init, max_age, ema_alpha, killer_function):
         self.track_id = track_id
-        self.class_id = int(class_id)
+        self._n_init = n_init
+        self._max_age = max_age
+        self.ema_alpha = ema_alpha
+        self.killer = killer_function
+
+    def initialize(self, detection):
+        self.class_id = detection.class_id
+        self.conf = detection.confidence
+        self.feature = detection.feature / np.linalg.norm(detection.feature)
+        self.state = TrackState.Tentative if self._n_init > 0 else TrackState.Confirmed
         self.hits = 0  # initialization isn't considered a hit
         self.age = 1
         self.time_since_update = 0
-        self.ema_alpha = ema_alpha
-
-        self.state = TrackState.Tentative if n_init > 0 else TrackState.Confirmed
-        self.feature = detection.feature / np.linalg.norm(detection.feature)
-
-        self.conf = conf
-        self._n_init = n_init
-        self._max_age = max_age
-
         self.kf = KalmanFilter()
         self.mean, self.covariance = self.kf.initiate(detection.to_xyah())
         self.last_association = detection
+        if self.killer(self):
+            self.track_id = None
+            self.state = TrackState.Deleted
+            return False
+        return True
 
     def to_tlwh(self):
         """Get current position in bounding box format `(top left x, top left y,
@@ -272,7 +268,7 @@ class Track:
         self.age += 1
         self.time_since_update += 1
 
-    def update(self, detection, class_id, conf):
+    def update(self, detection):
         """Perform Kalman filter measurement update step and update the feature
         cache.
         Parameters
@@ -280,10 +276,11 @@ class Track:
         detection : Detection
             The associated detection.
         """
-        self.conf = conf
-        self.class_id = class_id.int()
+        self.conf = detection.confidence
+        self.class_id = detection.class_id
         self.last_association = detection
-        self.mean, self.covariance = self.kf.update(self.mean, self.covariance, detection.to_xyah(), detection.confidence)
+        self.mean, self.covariance = self.kf.update(
+            self.mean, self.covariance, detection.to_xyah(), detection.confidence)
 
         new_feature = detection.feature / np.linalg.norm(detection.feature)
 
@@ -292,7 +289,11 @@ class Track:
 
         self.hits += 1
         self.time_since_update = 0
-        if self.state == TrackState.Tentative and self.hits >= self._n_init:
+
+        if self.killer(self):
+            self.state = TrackState.Deleted
+
+        elif self.state == TrackState.Tentative and self.hits >= self._n_init:
             self.state = TrackState.Confirmed
 
     def mark_missed(self):
