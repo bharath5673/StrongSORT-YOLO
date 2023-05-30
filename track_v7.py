@@ -169,6 +169,10 @@ def detect(opt):
 
     # Set Dataloader
     dataset = LoadImages(opt.source, img_size=imgsz, stride=stride)
+    num_videos = sum(dataset.video_flag)
+    num_images = dataset.nf - num_videos
+    num_sources = num_videos + bool(num_images)
+    source_pad = len(str(num_sources))
     
     if opt.save_img and not dataset.video_flag[0]:
         (save_dir / 'images' / 'imgs').mkdir(parents=True, exist_ok=True)
@@ -252,8 +256,8 @@ def detect(opt):
         total_frames = getattr(dataset, 'nframes', dataset.nf - sum(dataset.video_flag))
 
         result_message = 'source %d/%d (%dx%d %s) | frame %d/%d |' %(
-            dataset.count + 1, dataset.nf, *img.shape[2:][::-1], 
-            dataset.mode, frame_id, total_frames)
+            1 if dataset.mode == 'image' else (1 + dataset.count - max(num_images - 1, 0)), 
+            num_sources, *im0.shape[:2][::-1], dataset.mode, frame_id, total_frames)
         
         if opt.ecc:  # camera motion compensation
             strong_sort.tracker.camera_update(prev_frames, curr_frames)
@@ -316,6 +320,13 @@ def detect(opt):
 
         if opt.verbose:
             print(f'{result_message} YOLO {dt[1]:.3e}s, StrongSORT {dt[3]:.3e}s')
+        else:
+            p = 100.0 * frame_id / total_frames
+            s = int(p // 5)
+            result_message = '\r{} of {} sources [{: <20}] {:.1f}% '.format(
+                f'{(1 if dataset.mode == "image" else (1 + dataset.count - max(num_images - 1, 0))): >{source_pad}}', 
+                num_sources, "-" * (s - 1) + ("-" if s == 20 else ">" if s else ""), p)
+            print(result_message, end='', flush=True)
         
         # if opt.count:
         #     itemDict = {}
@@ -371,14 +382,14 @@ def detect(opt):
                 save_img_result = cv2.imwrite(str(save_dir / 'images' / path_base_name / file_name), im0)
             if not save_img_result and opt.verbose:
                 print('Error while saving image/frame:')
-                print('    - ID   :', frame_id)
-                print('    - File :', path)
+                print('    - Frame ID :', frame_id)
+                print('    - File     :', path)
         
         if opt.save_vid:
             vid_writer.write(im0)
 
         prev_frames = curr_frames
-
+    
     if opt.save_txt or opt.save_vid or opt.save_img:
         print(f'Results saved to {save_dir}')
     print(f'All done in {time.time() - t0:.3f}s')
