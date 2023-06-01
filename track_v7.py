@@ -251,10 +251,13 @@ def detect(opt):
         #     pred = apply_classifier(pred, modelc, img, im0)
         
         # Process detections
-        detections = pred[0] # Only one batch was forward in the detection
+        detections = pred[0]  # Only one batch was forward in the detection
+        # Rescale boxes from img_size to im0 size
+        detections[:, :4] = scale_coords(img.shape[2:], detections[:, :4], im0.shape).round()
+        detections = detection_filter(detections)
+
         frame_id = getattr(dataset, 'frame', dataset.count)
         total_frames = getattr(dataset, 'nframes', dataset.nf - sum(dataset.video_flag))
-
         result_message = 'source %d/%d (%dx%d %s) | frame %d/%d |' %(
             1 if dataset.mode == 'image' else (1 + dataset.count - max(num_images - 1, 0)), 
             num_sources, *im0.shape[:2][::-1], dataset.mode, frame_id, total_frames)
@@ -264,11 +267,6 @@ def detect(opt):
         
         # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh ### ????
         if detections.any():
-            # Rescale boxes from img_size to im0 size
-            detections[:, :4] = scale_coords(img.shape[2:], detections[:, :4], im0.shape).round()
-
-            detections = detection_filter(detections)
-
             xyxys = detections[:, :4].type(torch.int32)
             confs = detections[:, 4]
             classes = detections[:, 5].type(torch.int32)
