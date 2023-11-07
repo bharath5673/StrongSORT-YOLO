@@ -150,18 +150,21 @@ Can be saved to your experiment folder `runs/track/<yolo_model>_<deep_sort_model
 python track_v*.py --source ... --save-txt
 ```
 
-## YoloV8 (Counter)
+
+
 <br>
 <img src="https://media0.giphy.com/media/J19OSJKmqCyP7Mfjt1/giphy.gif" width="80" height="30" />    
-<h2>Yolov8 track and count </h2>
-</br
+<h2>YoloV8 (Counter) </h2>
+
+![V8 counter](demo_yoloV8.gif)
 
 ```bash
-
-
-python track_v8.py --source 0 --track --count
+## conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+## pip install ultralytics
+$ python track_v8.py --source 0 --track --count
 
 ```
+
 
 ## Cite
 
