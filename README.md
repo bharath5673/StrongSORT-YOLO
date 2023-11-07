@@ -159,6 +159,7 @@ python track_v*.py --source ... --save-txt
 ![V8 counter](demo_yoloV8.gif)
 
 ```bash
+## recommended conda env python=3.10
 ## conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 ## pip install ultralytics
 $ python track_v8.py --source 0 --track --count
