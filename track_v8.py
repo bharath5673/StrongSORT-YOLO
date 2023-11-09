@@ -117,7 +117,7 @@ def process(image, track=True):
 
 
 def process_video(input_path, output_path, track, count):
-    global input_video_name
+    global input_video_name, frameId
     cap = cv2.VideoCapture(int(input_path) if input_path == '0' else input_path)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
