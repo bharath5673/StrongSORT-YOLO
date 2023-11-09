@@ -9,6 +9,7 @@ import time
 from collections import Counter, deque
 import pandas as pd
 import argparse
+from multiprocessing import Process
 
 # Load a model
 model = YOLO('yolov8n-seg.pt')  # load an official model
@@ -115,32 +116,23 @@ def process(image, track=True):
 
 
 
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description='Process video with YOLO.')
-    parser.add_argument('--source', type=str, default='0', help='Input video file path or camera index (default: 0)')
-    parser.add_argument('--track', action='store_true', help='if track objects')
-    parser.add_argument('--count', action='store_true', help='if count objects')
-
-    args = parser.parse_args()
-
+def process_video(input_path, output_path, track, count):
     global input_video_name
-    cap = cv2.VideoCapture(int(args.source) if args.source == '0' else args.source)
+    cap = cv2.VideoCapture(int(input_path) if input_path == '0' else input_path)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Change the codec if needed (e.g., 'XVID')
-    input_video_name = args.source.split('.')[0]  # Get the input video name without extension
-    out = cv2.VideoWriter('output/'+str(input_video_name) + '_output.mp4', fourcc, 15, (frame_width, frame_height))
-
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    input_video_name = input_path.split('.')[0]
+    out = cv2.VideoWriter('output/'+output_path, fourcc, fps, (frame_width, frame_height))
 
     if not cap.isOpened():
-        print("Error: Could not open video file.")
-        exit()
+        print(f"Error: Could not open video file: {input_path}")
+        return
 
     frameId = 0
     start_time = time.time()
-    fps = str()
+    fps_str = ""
 
     while True:
         frameId += 1
@@ -149,67 +141,87 @@ if __name__ == "__main__":
         if not ret:
             break
 
-        frame = process(frame1, args.track)
+        frame = process(frame1, track)
 
-        if not args.track and args.count:
+        if not track and count:
             print('[INFO] count works only when objects are tracking.. so use: --track --count')
             break
 
-        if args.track and args.count:
-            itemDict={}
-            ## NOTE: this works only if save-txt is true
+        if track and count:
+            item_dict = {}
             try:
-                df = pd.read_csv('output/'+input_video_name+'_labels.txt' , header=None, delim_whitespace=True)
-                # print(df)
-                df = df.iloc[:,0:3]
-                df.columns=["frameid" ,"class","trackid"]
-                df = df[['class','trackid']]
+                df = pd.read_csv(f'output/{input_video_name}_labels.txt', header=None, delim_whitespace=True)
+                df = df.iloc[:, 0:3]
+                df.columns = ["frameid", "class", "trackid"]
+                df = df[['class', 'trackid']]
                 df = (df.groupby('trackid')['class']
-                          .apply(list)
-                          .apply(lambda x:sorted(x))
-                         ).reset_index()
-                df['class']=df['class'].apply(lambda x: Counter(x).most_common(1)[0][0])
+                        .apply(list)
+                        .apply(lambda x: sorted(x))
+                        ).reset_index()
+                df['class'] = df['class'].apply(lambda x: Counter(x).most_common(1)[0][0])
                 vc = df['class'].value_counts()
                 vc = dict(vc)
 
                 vc2 = {}
                 for key, val in enumerate(names):
                     vc2[key] = val
-                itemDict = dict((vc2[key], value) for (key, value) in vc.items())
-                itemDict  = dict(sorted(itemDict.items(), key=lambda item: item[0]))
-                # print(itemDict)
-
+                item_dict = dict((vc2[key], value) for (key, value) in vc.items())
+                item_dict = dict(sorted(item_dict.items(), key=lambda item: item[0]))
             except:
                 pass
 
-            ## overlay
             display = frame.copy()
             h, w = frame.shape[0], frame.shape[1]
-            x1, y1, x2, y2 =10, 10, 10, 70
-            txt_size = cv2.getTextSize(str(itemDict), cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
-            cv2.rectangle(frame, (x1, y1 + 1), (txt_size[0] * 2, y2),(0, 0, 0),-1)
-            cv2.putText(frame, '{}'.format(itemDict), (x1 + 10, y1 + 35), cv2.FONT_HERSHEY_SIMPLEX,0.7, (210, 210, 210), 2)
+            x1, y1, x2, y2 = 10, 10, 10, 70
+            txt_size = cv2.getTextSize(str(item_dict), cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
+            cv2.rectangle(frame, (x1, y1 + 1), (txt_size[0] * 2, y2), (0, 0, 0), -1)
+            cv2.putText(frame, '{}'.format(item_dict), (x1 + 10, y1 + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (210, 210, 210), 2)
             cv2.addWeighted(frame, 0.7, display, 1 - 0.7, 0, frame)
 
         current_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
         if frameId % 10 == 0:
             end_time = time.time()
             elapsed_time = end_time - start_time
-            fps_current = 10 / elapsed_time  # Calculate FPS over the last 20 frames
-            fps = f'FPS: {fps_current:.2f}'
-            start_time = time.time()  # Reset start_time for the next 20 frames
+            fps_current = 10 / elapsed_time
+            fps_str = f'FPS: {fps_current:.2f}'
+            start_time = time.time()
 
-        cv2.putText(frame, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1, cv2.LINE_AA)
-
+        cv2.putText(frame, fps_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1, cv2.LINE_AA)
         cv2.imshow("yolo", frame)
         out.write(frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    # Release the video capture featuresect
     cap.release()
     out.release()
     cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Process multiple videos with YOLO.')
+    parser.add_argument('--sources', nargs='+', required=True, help='Input video file paths or camera indices')
+    parser.add_argument('--track', action='store_true', help='if track objects')
+    parser.add_argument('--count', action='store_true', help='if count objects')
+
+    args = parser.parse_args()
+
+    if len(args.sources) == 0:
+        print("Error: Please provide at least one source.")
+        exit()
+
+    if args.track and not args.count:
+        print("Warning: Tracking is enabled, but counting is not. Counting works when tracking is enabled.")
+
+    processes = []
+
+    for source in args.sources:
+        output_video_name = source.split('.')[0] + '_output.mp4'
+        p = Process(target=process_video, args=(source, output_video_name, args.track, args.count))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()
 
 
