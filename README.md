@@ -172,7 +172,7 @@ python track_v*.py --source ... --save-txt
 ## recommended conda env python=3.10
 ## conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 ## pip install ultralytics
-$ python track_v8.py --source 0 --track --count
+$ python track_v8.py --source 0 1 vid1.mp4 vid2.mp4 --track --count
 
 ```
 
