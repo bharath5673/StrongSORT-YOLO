@@ -138,7 +138,13 @@ def process(image, track=True):
 
 
 
-def process_video(source):
+def process_video(args):
+    print(args)
+    source = args['source']
+    track_ = args['track']
+    count_ = args['count']
+
+
     global input_video_name
     cap = cv2.VideoCapture(int(source) if source == '0' else source)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -165,13 +171,13 @@ def process_video(source):
         if not ret:
             break
 
-        frame = process(frame1, args.track)
+        frame = process(frame1, track_)
 
-        if not args.track and args.count:
+        if not track_ and count_:
             print('[INFO] count works only when objects are tracking.. so use: --track --count')
             break
 
-        if args.track and args.count:
+        if track_ and count_:
             itemDict={}
             ## NOTE: this works only if save-txt is true
             try:
@@ -237,6 +243,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    with Pool(processes=len(args.source)) as pool:
-        pool.map(process_video, args.source)
+    # Create a list of dictionaries containing the arguments for each process
+    process_args_list = [{'source': source, 'track': args.track, 'count': args.count} for source in args.source]
 
+    with Pool(processes=len(process_args_list)) as pool:
+        pool.map(process_video, process_args_list)
