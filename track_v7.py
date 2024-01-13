@@ -75,10 +75,12 @@ def detect(save_img=False, line_thickness=1):
     save_img=opt.save_img
     line_thickness=opt.line_thickness
     draw=opt.draw 
+    first=opt.first
 
 
     # Directories
     save_dir = Path(increment_path(Path(opt.project) / opt.exp_name, exist_ok=opt.exist_ok))  # increment run
+    (save_dir / 'first_tracked_detections' if first else save_dir).mkdir(parents=True, exist_ok=True) # make tracked object directory
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
     # Initialize
@@ -189,8 +191,9 @@ def detect(save_img=False, line_thickness=1):
             curr_frames[i] = im0
             p = Path(p)  # to Path
             txt_file_name = p.name
-            save_path = str(save_dir / p.name)  # im.jpg, vid.mp4, .
+            save_path = str(save_dir / p.name)  # im.jpg, vid.mp4
             txt_path = str(save_dir / 'labels' / p.stem)  # im.txt
+            first_detection_path = str(save_dir / 'first_tracked_detections') 
 
             s += '%gx%g ' % img.shape[2:]  # print string
             imc = im0.copy() if save_crop else im0  # for save_crop
@@ -226,22 +229,32 @@ def detect(save_img=False, line_thickness=1):
                         id = output[4]
                         cls = output[5]
 
+                        # object trajectory
+                        center = ((int(bboxes[0]) + int(bboxes[2])) // 2,(int(bboxes[1]) + int(bboxes[3])) // 2)
+                        if id not in trajectory:
+                            trajectory[id] = []
+                        trajectory[id].append(center)
+                            
                         if draw:
-                            # object trajectory
-                            center = ((int(bboxes[0]) + int(bboxes[2])) // 2,(int(bboxes[1]) + int(bboxes[3])) // 2)
-                            if id not in trajectory:
-                                trajectory[id] = []
-                            trajectory[id].append(center)
                             for i1 in range(1,len(trajectory[id])):
                                 if trajectory[id][i1-1] is None or trajectory[id][i1] is None:
                                     continue
                                 # thickness = int(np.sqrt(1000/float(i1+10))*0.3)
-                                thickness = 2
+                                thickness = 1
                                 try:
-                                  cv2.line(im0, trajectory[id][i1 - 1], trajectory[id][i1], (0, 0, 255), thickness)
+                                    cv2.line(im0, trajectory[id][i1 - 1], trajectory[id][i1], (0, 0, 255), thickness)
                                 except:
-                                  pass
-
+                                    pass
+                        if first:
+                            if len(trajectory[id]) == 1: # if trajectory exists
+                                id = int(id)
+                                c = int(cls)
+                                label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
+                                                                    (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
+                                plot_one_box(bboxes, im0, label=label, color=colors[int(cls)], line_thickness=line_thickness)
+                                # save image of first detection with format: trackid_class.jpg
+                                cv2.imwrite(os.path.join(first_detection_path, f'{id}' + '_' + f'{c}' + '.jpg'), im0)
+ 
                         if save_txt:
                             # to MOT format
                             bbox_left = output[0]
@@ -282,7 +295,7 @@ def detect(save_img=False, line_thickness=1):
                               .apply(lambda x:sorted(x))
                              ).reset_index()
 
-                    df.colums = ["trackid","class"]
+                    df.columns = ["trackid","class"]
                     df['class']=df['class'].apply(lambda x: Counter(x).most_common(1)[0][0])
                     vc = df['class'].value_counts()
                     vc = dict(vc)
@@ -306,10 +319,6 @@ def detect(save_img=False, line_thickness=1):
                     cv2.rectangle(im0, (x1, y1 + 1), (txt_size[0] * 2, y2),(0, 0, 0),-1)
                     cv2.putText(im0, '{}'.format(itemDict), (x1 + 10, y1 + 35), cv2.FONT_HERSHEY_SIMPLEX,0.7, (210, 210, 210), 2)
                     cv2.addWeighted(im0, 0.7, display, 1 - 0.7, 0, im0)
-
-
-            #current frame // tesing
-            cv2.imwrite('testing.jpg',im0)
 
 
             # Stream results
@@ -375,6 +384,7 @@ if __name__ == '__main__':
     parser.add_argument('--hide-class', default=False, action='store_true', help='hide IDs')
     parser.add_argument('--count', action='store_true', help='display all MOT counts results on screen')
     parser.add_argument('--draw', action='store_true', help='display object trajectory lines')
+    parser.add_argument('--first', action='store_true', help='save first detection for each new object tracked')
     opt = parser.parse_args()
     print(opt)
     #check_requirements(exclude=('pycocotools', 'thop'))
