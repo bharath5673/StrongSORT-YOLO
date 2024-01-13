@@ -189,7 +189,7 @@ def detect(save_img=False, line_thickness=1):
             curr_frames[i] = im0
             p = Path(p)  # to Path
             txt_file_name = p.name
-            save_path = str(save_dir / p.name)  # im.jpg, vid.mp4, .
+            save_path = str(save_dir / p.name)  # im.jpg, vid.mp4
             txt_path = str(save_dir / 'labels' / p.stem)  # im.txt
 
             s += '%gx%g ' % img.shape[2:]  # print string
@@ -282,7 +282,7 @@ def detect(save_img=False, line_thickness=1):
                               .apply(lambda x:sorted(x))
                              ).reset_index()
 
-                    df.colums = ["trackid","class"]
+                    df.columns = ["trackid","class"]
                     df['class']=df['class'].apply(lambda x: Counter(x).most_common(1)[0][0])
                     vc = df['class'].value_counts()
                     vc = dict(vc)
@@ -306,10 +306,6 @@ def detect(save_img=False, line_thickness=1):
                     cv2.rectangle(im0, (x1, y1 + 1), (txt_size[0] * 2, y2),(0, 0, 0),-1)
                     cv2.putText(im0, '{}'.format(itemDict), (x1 + 10, y1 + 35), cv2.FONT_HERSHEY_SIMPLEX,0.7, (210, 210, 210), 2)
                     cv2.addWeighted(im0, 0.7, display, 1 - 0.7, 0, im0)
-
-
-            #current frame // tesing
-            cv2.imwrite('testing.jpg',im0)
 
 
             # Stream results
