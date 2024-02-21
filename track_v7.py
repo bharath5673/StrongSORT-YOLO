@@ -250,8 +250,12 @@ def detect(save_img=False, line_thickness=1):
                             bbox_h = output[3] - output[1]
                             # Write MOT compliant results to file
                             with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
-                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))
+                                if save_conf:
+                                    f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
+                                                                   bbox_top, bbox_w, bbox_h, conf, -1, -1, -1))
+                                else:
+                                    f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
+                                                                   bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))
 
                         if save_vid or save_crop or show_vid :  # Add bbox to image
                             c = int(cls)  # integer class
@@ -355,7 +359,7 @@ if __name__ == '__main__':
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--show-vid', action='store_true',default=True, help='display results')
+    parser.add_argument('--show-vid', action='store_true',default=False, help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-img', action='store_true', help='save results to *.jpg')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
