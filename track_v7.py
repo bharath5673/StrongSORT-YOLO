@@ -257,7 +257,7 @@ def detect(save_img=False, line_thickness=1):
                                     f.write(('%g ' * 11 + '\n') % (frame_idx + 1, cls, id, bbox_left,  # MOT format
                                                                    bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))
 
-                        if save_vid or save_crop or show_vid :  # Add bbox to image
+                        if save_vid or save_crop or show_vid or save_img:  # Add bbox to image
                             c = int(cls)  # integer class
                             id = int(id)  # integer id
                             label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
@@ -310,11 +310,6 @@ def detect(save_img=False, line_thickness=1):
                     cv2.rectangle(im0, (x1, y1 + 1), (txt_size[0] * 2, y2),(0, 0, 0),-1)
                     cv2.putText(im0, '{}'.format(itemDict), (x1 + 10, y1 + 35), cv2.FONT_HERSHEY_SIMPLEX,0.7, (210, 210, 210), 2)
                     cv2.addWeighted(im0, 0.7, display, 1 - 0.7, 0, im0)
-
-
-            #current frame // tesing
-            cv2.imwrite('testing.jpg',im0)
-
 
             # Stream results
             if show_vid:
