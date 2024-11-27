@@ -12,7 +12,8 @@ import argparse
 from multiprocessing import Pool
 
 # Load a model
-model = YOLO('yolov8n-seg.pt')  # load an official model
+# model = YOLO('yolov8n-seg.pt')  # load an official model
+model = YOLO('yolov5n.pt')  # load an official model
 model.overrides['conf'] = 0.3  # NMS confidence threshold
 model.overrides['iou'] = 0.4  # NMS IoU threshold
 model.overrides['agnostic_nms'] = False  # NMS class-agnostic
@@ -46,37 +47,137 @@ def process(image, track=True):
                 if predictions is None:
                     continue
 
-                if predictions.boxes is None or predictions.masks is None or predictions.boxes.id is None:
+                # Continue only if boxes and their ids are available
+                if predictions.boxes is None or predictions.boxes.id is None:
                     continue
 
-                for bbox, masks in zip(predictions.boxes, predictions.masks):
-                    for scores, classes, bbox_coords, id_ in zip(bbox.conf, bbox.cls, bbox.xyxy, bbox.id):
+                # If masks are present, iterate through both bbox and masks
+                if predictions.masks is not None:
+                    for bbox, masks in zip(predictions.boxes, predictions.masks):
+                        for scores, classes, bbox_coords, id_ in zip(bbox.conf, bbox.cls, bbox.xyxy, bbox.id):
+                            xmin    = bbox_coords[0]
+                            ymin    = bbox_coords[1]
+                            xmax    = bbox_coords[2]
+                            ymax    = bbox_coords[3]
+
+                            # Draw rectangle for the bounding box
+                            cv2.rectangle(image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0, 0, 225), 2)
+
+                            # Append the bounding box details to a list
+                            bboxes.append([bbox_coords, scores, classes, id_])
+
+                            # Create the label for displaying
+                            label = (' '+f'ID: {int(id_)}'+' '+str(predictions.names[int(classes)]) + ' ' + str(round(float(scores) * 100, 1)) + '%')
+                            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2, 1)
+                            dim, baseline = text_size[0], text_size[1]
+
+                            # Draw the label background rectangle
+                            cv2.rectangle(image, (int(xmin), int(ymin)), ((int(xmin) + dim[0] // 3) - 20, int(ymin) - dim[1] + baseline), (30, 30, 30), cv2.FILLED)
+                            
+                            # Put the label text
+                            cv2.putText(image, label, (int(xmin), int(ymin) - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+                            # Calculate the centroid of the bounding box
+                            centroid_x = (xmin + xmax) / 2
+                            centroid_y = (ymin + ymax) / 2
+
+                            # Append centroid to tracking_points if ID is not None
+                            if id_ is not None and int(id_) not in tracking_trajectories:
+                                tracking_trajectories[int(id_)] = deque(maxlen=5)
+                            if id_ is not None:
+                                tracking_trajectories[int(id_)].append((centroid_x, centroid_y))
+
+                        # Draw trajectories for all objects
+                        for id_, trajectory in tracking_trajectories.items():
+                            for i in range(1, len(trajectory)):
+                                cv2.line(image, (int(trajectory[i-1][0]), int(trajectory[i-1][1])), (int(trajectory[i][0]), int(trajectory[i][1])), (255, 255, 255), 2)
+
+                        # Process and blend masks if available
+                        for mask in masks.xy:
+                            polygon = mask
+                            cv2.polylines(image, [np.int32(polygon)], True, (255, 0, 0), thickness=2)
+
+                            color_ = [int(c) for c in colors[int(classes)]]
+                            mask_copy = image.copy()
+                            cv2.fillPoly(mask_copy, [np.int32(polygon)], color_) 
+                            alpha = 0.5  # Adjust the transparency level
+                            blended_image = cv2.addWeighted(image, 1 - alpha, mask_copy, alpha, 0)
+                            image = blended_image.copy()
+
+                # If no masks are present, still draw bounding boxes
+                else:
+                    for bbox in predictions.boxes:
+                        for scores, classes, bbox_coords, id_ in zip(bbox.conf, bbox.cls, bbox.xyxy, bbox.id):
+                            xmin    = bbox_coords[0]
+                            ymin    = bbox_coords[1]
+                            xmax    = bbox_coords[2]
+                            ymax    = bbox_coords[3]
+
+                            # Draw rectangle for the bounding box
+                            cv2.rectangle(image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0, 0, 225), 2)
+
+                            # Append the bounding box details to a list
+                            bboxes.append([bbox_coords, scores, classes, id_])
+
+                            # Create the label for displaying
+                            label = (' '+f'ID: {int(id_)}'+' '+str(predictions.names[int(classes)]) + ' ' + str(round(float(scores) * 100, 1)) + '%')
+                            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2, 1)
+                            dim, baseline = text_size[0], text_size[1]
+
+                            # Draw the label background rectangle
+                            cv2.rectangle(image, (int(xmin), int(ymin)), ((int(xmin) + dim[0] // 3) - 20, int(ymin) - dim[1] + baseline), (30, 30, 30), cv2.FILLED)
+                            
+                            # Put the label text
+                            cv2.putText(image, label, (int(xmin), int(ymin) - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+                            # Calculate the centroid of the bounding box
+                            centroid_x = (xmin + xmax) / 2
+                            centroid_y = (ymin + ymax) / 2
+
+                            # Append centroid to tracking_points if ID is not None
+                            if id_ is not None and int(id_) not in tracking_trajectories:
+                                tracking_trajectories[int(id_)] = deque(maxlen=5)
+                            if id_ is not None:
+                                tracking_trajectories[int(id_)].append((centroid_x, centroid_y))
+
+                    # Draw trajectories for all objects
+                    for id_, trajectory in tracking_trajectories.items():
+                        for i in range(1, len(trajectory)):
+                            cv2.line(image, (int(trajectory[i-1][0]), int(trajectory[i-1][1])), (int(trajectory[i][0]), int(trajectory[i][1])), (255, 255, 255), 2)
+
+
+        for item in bboxes:
+            bbox_coords, scores, classes, *id_ = item if len(item) == 4 else (*item, None)
+            line = f'{frameId} {int(classes)} {int(id_[0])} {round(float(scores), 3)} {int(bbox_coords[0])} {int(bbox_coords[1])} {int(bbox_coords[2])} {int(bbox_coords[3])} -1 -1 -1 -1\n'
+            # print(line)
+            file.write(line)
+
+
+    if not track:
+        results = model.predict(image, verbose=False, device=0)  # predict on an image
+
+        for predictions in results:
+            if predictions is None:
+                continue  # Skip this image if YOLO fails to detect any objects
+            if predictions.boxes is None:
+                continue  # Skip this image if there are no boxes
+
+            # If masks are present, iterate through both bbox and masks
+            if predictions.masks is not None:
+                for bbox, masks in zip(predictions.boxes, predictions.masks):              
+                    for scores, classes, bbox_coords in zip(bbox.conf, bbox.cls, bbox.xyxy):
                         xmin    = bbox_coords[0]
                         ymin    = bbox_coords[1]
                         xmax    = bbox_coords[2]
                         ymax    = bbox_coords[3]
                         cv2.rectangle(image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0,0,225), 2)
-                        bboxes.append([bbox_coords, scores, classes, id_])
+                        bboxes.append([bbox_coords, scores, classes])
 
-                        label = (' '+f'ID: {int(id_)}'+' '+str(predictions.names[int(classes)]) + ' ' + str(round(float(scores) * 100, 1)) + '%')
+                        label = (' '+str(predictions.names[int(classes)]) + ' ' + str(round(float(scores) * 100, 1)) + '%')
                         text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2, 1)
                         dim, baseline = text_size[0], text_size[1]
                         cv2.rectangle(image, (int(xmin), int(ymin)), ((int(xmin) + dim[0] //3) - 20, int(ymin) - dim[1] + baseline), (30,30,30), cv2.FILLED)
                         cv2.putText(image,label,(int(xmin), int(ymin) - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-
-                        centroid_x = (xmin + xmax) / 2
-                        centroid_y = (ymin + ymax) / 2
-
-                        # Append centroid to tracking_points
-                        if id_ is not None and int(id_) not in tracking_trajectories:
-                            tracking_trajectories[int(id_)] = deque(maxlen=5)
-                        if id_ is not None:
-                            tracking_trajectories[int(id_)].append((centroid_x, centroid_y))
-
-                    # Draw trajectories
-                    for id_, trajectory in tracking_trajectories.items():
-                        for i in range(1, len(trajectory)):
-                            cv2.line(image, (int(trajectory[i-1][0]), int(trajectory[i-1][1])), (int(trajectory[i][0]), int(trajectory[i][1])), (255, 255, 255), 2)
 
                     for mask in masks.xy:
                         polygon = mask
@@ -89,49 +190,22 @@ def process(image, track=True):
                         alpha = 0.5  # Adjust the transparency level
                         blended_image = cv2.addWeighted(image, 1 - alpha, mask, alpha, 0)
                         image = blended_image.copy()
+            # If no masks are present, still draw bounding boxes
+            else:
+                for bbox in predictions.boxes:              
+                    for scores, classes, bbox_coords in zip(bbox.conf, bbox.cls, bbox.xyxy):
+                        xmin    = bbox_coords[0]
+                        ymin    = bbox_coords[1]
+                        xmax    = bbox_coords[2]
+                        ymax    = bbox_coords[3]
+                        cv2.rectangle(image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0,0,225), 2)
+                        bboxes.append([bbox_coords, scores, classes])
 
-
-        for item in bboxes:
-            bbox_coords, scores, classes, *id_ = item if len(item) == 4 else (*item, None)
-            line = f'{frameId} {int(classes)} {int(id_[0])} {round(float(scores), 3)} {int(bbox_coords[0])} {int(bbox_coords[1])} {int(bbox_coords[2])} {int(bbox_coords[3])} -1 -1 -1 -1\n'
-            # print(line)
-            file.write(line)
-
-
-    if not track:
-        results = model.predict(image, verbose=False, device=0)  # predict on an image
-        for predictions in results:
-            if predictions is None:
-                continue  # Skip this image if YOLO fails to detect any objects
-            if predictions.boxes is None or predictions.masks is None:
-                continue  # Skip this image if there are no boxes or masks
-
-            for bbox, masks in zip(predictions.boxes, predictions.masks):              
-                for scores, classes, bbox_coords in zip(bbox.conf, bbox.cls, bbox.xyxy):
-                    xmin    = bbox_coords[0]
-                    ymin    = bbox_coords[1]
-                    xmax    = bbox_coords[2]
-                    ymax    = bbox_coords[3]
-                    cv2.rectangle(image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0,0,225), 2)
-                    bboxes.append([bbox_coords, scores, classes])
-
-                    label = (' '+str(predictions.names[int(classes)]) + ' ' + str(round(float(scores) * 100, 1)) + '%')
-                    text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2, 1)
-                    dim, baseline = text_size[0], text_size[1]
-                    cv2.rectangle(image, (int(xmin), int(ymin)), ((int(xmin) + dim[0] //3) - 20, int(ymin) - dim[1] + baseline), (30,30,30), cv2.FILLED)
-                    cv2.putText(image,label,(int(xmin), int(ymin) - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-
-                for mask in masks.xy:
-                    polygon = mask
-                    cv2.polylines(image, [np.int32(polygon)], True, (255, 0, 0), thickness=2)
-
-                    color_ = [int(c) for c in colors[int(classes)]]
-                    # cv2.fillPoly(image, [np.int32(polygon)], color_) 
-                    mask = image.copy()
-                    cv2.fillPoly(mask, [np.int32(polygon)], color_) 
-                    alpha = 0.5  # Adjust the transparency level
-                    blended_image = cv2.addWeighted(image, 1 - alpha, mask, alpha, 0)
-                    image = blended_image.copy()
+                        label = (' '+str(predictions.names[int(classes)]) + ' ' + str(round(float(scores) * 100, 1)) + '%')
+                        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2, 1)
+                        dim, baseline = text_size[0], text_size[1]
+                        cv2.rectangle(image, (int(xmin), int(ymin)), ((int(xmin) + dim[0] //3) - 20, int(ymin) - dim[1] + baseline), (30,30,30), cv2.FILLED)
+                        cv2.putText(image,label,(int(xmin), int(ymin) - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
 
     return image
