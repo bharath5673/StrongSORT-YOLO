@@ -11,6 +11,7 @@ For an all-in-one Python file that can run detection, segmentation, and pose est
 
 ![yolo_multi_model](pose_output.gif)
 
+
 ```bash
 ## recommended conda env python=3.10
 ## pip install ultralytics -U
