@@ -1,5 +1,4 @@
-## conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
-## pip install ultralytics
+## pip install ultralytics -U --force-reinstall
 
 import os
 import cv2
@@ -13,7 +12,9 @@ from multiprocessing import Pool
 
 # Load a model
 # model = YOLO('yolov8n-seg.pt')  # load an official model
-model = YOLO('yolov5n.pt')  # load an official model
+# model = YOLO('yolov5n.pt')  # load an official model
+# model = YOLO("yolo11n.pt")
+model = YOLO("yolo11n-pose.pt")
 model.overrides['conf'] = 0.3  # NMS confidence threshold
 model.overrides['iou'] = 0.4  # NMS IoU threshold
 model.overrides['agnostic_nms'] = False  # NMS class-agnostic
@@ -39,6 +40,8 @@ def process(image, track=True):
         if track is True:
             results = model.track(image, verbose=False, device=0, persist=True, tracker="botsort.yaml")
 
+            # print(results)
+
             for id_ in list(tracking_trajectories.keys()):
                 if id_ not in [int(bbox.id) for predictions in results if predictions is not None for bbox in predictions.boxes if bbox.id is not None]:
                     del tracking_trajectories[id_]
@@ -50,6 +53,19 @@ def process(image, track=True):
                 # Continue only if boxes and their ids are available
                 if predictions.boxes is None or predictions.boxes.id is None:
                     continue
+
+                # If masks are present, iterate through both bbox and masks
+                if predictions.keypoints is not None:
+                    for bbox, keypoints in zip(predictions.boxes, predictions.keypoints):
+                        for keypoint in keypoints.xy.tolist():
+                            for idx, (x , y) in enumerate(keypoint):
+                                if (x, y) != (0.0, 0.0):  # Filter out invalid keypoints
+                                    cv2.circle(image, (int(x), int(y)), 5, (0, 255, 0), -1)  # Draw green keypoints
+                                    cv2.circle(image, (int(x), int(y)), 2, (0, 0, 0), -1)  # Draw black keypoints
+                                    # Add the index text next to the keypoint
+                                    cv2.putText(image, str(idx), (int(x) + 5, int(y) - 5), 
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
 
                 # If masks are present, iterate through both bbox and masks
                 if predictions.masks is not None:
@@ -163,6 +179,19 @@ def process(image, track=True):
                 continue  # Skip this image if there are no boxes
 
             # If masks are present, iterate through both bbox and masks
+            if predictions.keypoints is not None:
+                for bbox, keypoints in zip(predictions.boxes, predictions.keypoints):
+                    for keypoint in keypoints.xy.tolist():
+                        for idx, (x , y) in enumerate(keypoint):
+                            if (x, y) != (0.0, 0.0):  # Filter out invalid keypoints
+                                cv2.circle(image, (int(x), int(y)), 5, (0, 255, 0), -1)  # Draw green keypoints
+                                cv2.circle(image, (int(x), int(y)), 2, (0, 0, 0), -1)  # Draw black keypoints
+                                # Add the index text next to the keypoint
+                                cv2.putText(image, str(idx), (int(x) + 5, int(y) - 5), 
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
+
+            # If masks are present, iterate through both bbox and masks
             if predictions.masks is not None:
                 for bbox, masks in zip(predictions.boxes, predictions.masks):              
                     for scores, classes, bbox_coords in zip(bbox.conf, bbox.cls, bbox.xyxy):
@@ -241,9 +270,10 @@ def process_video(args):
     while True:
         frameId += 1
         ret, frame = cap.read()
-        frame1 = frame.copy()
         if not ret:
             break
+        frame1 = frame.copy()
+
 
         frame = process(frame1, track_)
 
@@ -255,7 +285,7 @@ def process_video(args):
             itemDict={}
             ## NOTE: this works only if save-txt is true
             try:
-                df = pd.read_csv('output/'+input_video_name+'_labels.txt' , header=None, delim_whitespace=True)
+                df = pd.read_csv('output/'+input_video_name+'_labels.txt' , header=None, sep='\s+')
                 # print(df)
                 df = df.iloc[:,0:3]
                 df.columns=["frameid" ,"class","trackid"]
