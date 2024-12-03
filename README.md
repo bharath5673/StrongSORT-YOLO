@@ -4,7 +4,7 @@
 <img src="https://media0.giphy.com/media/J19OSJKmqCyP7Mfjt1/giphy.gif" width="80" height="30" />    
 <h2>yolo_multi_model </h2>
 
-For an all-in-one Python file that can run detection, segmentation, and pose estimation with various YOLOv5 models (such as YOLOv5, YOLOv7, YOLOv8, and YOLOv11), you should choose a name that clearly reflects the functionality and the models used, while being concise. includes detection, segmentation, and pose estimation) using different YOLO models.
+For an all-in-one Python file that can run detection, segmentation, and pose estimation with various YOLO models (such as YOLOv5, YOLOv7, YOLOv8, and YOLOv11), you should choose a name that clearly reflects the functionality and the models used, while being concise. includes detection, segmentation, and pose estimation) using different YOLO models.
 
 ![yolo_multi_model](demo_yoloV8.gif)
 
